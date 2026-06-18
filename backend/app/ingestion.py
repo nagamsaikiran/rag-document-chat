@@ -22,7 +22,11 @@ class Chunk:
 
 
 def load_pdf_pages(path: str, source_name: str) -> List[tuple[int, str]]:
-    """Return [(page_number, page_text)] for a PDF, skipping empty pages."""
+    """Return [(page_number, page_text)] for a PDF, skipping empty pages.
+
+    Uses pypdf — fast and reliable for text-based PDFs. (pdfplumber extracts
+    slightly cleaner text but is several times slower, which hurt upload speed.)
+    """
     reader = PdfReader(path)
     pages = []
     for i, page in enumerate(reader.pages):

@@ -56,6 +56,13 @@ class VectorStore:
             )
         return hits
 
+    def clear(self) -> None:
+        """Wipe all indexed documents (delete and recreate the collection)."""
+        self._client.delete_collection("documents")
+        self._collection = self._client.get_or_create_collection(
+            name="documents", metadata={"hnsw:space": "cosine"}
+        )
+
     def count(self) -> int:
         return self._collection.count()
 

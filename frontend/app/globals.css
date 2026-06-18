@@ -22,6 +22,8 @@ button {
   background: #4c7dff; color: white; font-size: 14px; font-weight: 600;
 }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
+button.ghost { background: transparent; border: 1px solid #3a4150; color: #aab2c0; font-weight: 500; }
+button.ghost:hover { border-color: #ff8088; color: #ff8088; }
 .msg { padding: 12px 14px; border-radius: 10px; margin: 10px 0; white-space: pre-wrap; line-height: 1.5; }
 .user { background: #1d2530; }
 .assistant { background: #14181f; border: 1px solid #232a36; }
@@ -29,4 +31,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .cites { margin-top: 10px; font-size: 13px; color: #aab2c0; }
 .cite { padding: 6px 8px; border-left: 3px solid #4c7dff; background: #11151c; border-radius: 4px; margin: 6px 0; }
 .muted { color: #767d8a; font-size: 13px; }
+.err-text { color: #ff8088; font-size: 13px; }
 .pill { font-size: 12px; background: #1d2530; padding: 4px 9px; border-radius: 999px; color: #9aa0ab; }
+.banner { padding: 11px 14px; border-radius: 8px; margin-bottom: 16px; font-size: 14px; }
+.banner.err { background: #2a1518; border: 1px solid #5a2128; color: #ff9ba1; }

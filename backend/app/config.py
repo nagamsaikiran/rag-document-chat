@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     openai_chat_model: str = "gpt-4o-mini"
     openai_embedding_model: str = "text-embedding-3-small"
 
+    # Google Gemini (free tier)
+    gemini_api_key: str = ""
+    gemini_chat_model: str = "gemini-2.5-flash"
+    gemini_embedding_model: str = "gemini-embedding-001"
+
     # Retrieval / chunking
     chunk_size: int = 1000
     chunk_overlap: int = 150
