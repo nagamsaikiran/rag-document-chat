@@ -1,0 +1,18 @@
+[
+  {
+    "question": "What is the refund window described in the policy?",
+    "expected": "30 days from the date of purchase",
+    "must_include": ["30 days"]
+  },
+  {
+    "question": "Who is responsible for return shipping costs?",
+    "expected": "The customer pays return shipping unless the item was defective.",
+    "must_include": ["customer", "defective"]
+  },
+  {
+    "question": "What is the capital of France?",
+    "expected": "OUT_OF_SCOPE",
+    "must_include": ["don't know"],
+    "note": "Negative test: answer is NOT in the docs. A good system should refuse, not hallucinate."
+  }
+]

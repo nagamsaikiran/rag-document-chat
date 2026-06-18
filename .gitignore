@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+backend/.chroma/
+backend/.env
+backend/eval/questions.json
+
+# Node / Next
+node_modules/
+.next/
+frontend/.env.local
+
+# Env / secrets
+.env
+*.local
+
+# OS
+.DS_Store
