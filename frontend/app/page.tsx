@@ -13,16 +13,19 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [indexed, setIndexed] = useState(0);
   const [sources, setSources] = useState<string[]>([]);
+  const [status, setStatus] = useState<{ msg: string; ok: boolean } | null>(null);
+  const [backendUp, setBackendUp] = useState<boolean | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   async function refresh() {
     try {
       const h = await fetch(`${API}/health`).then((r) => r.json());
       setIndexed(h.indexed_chunks ?? 0);
+      setBackendUp(true);
       const s = await fetch(`${API}/sources`).then((r) => r.json());
       setSources(s.sources ?? []);
     } catch {
-      /* backend not up yet */
+      setBackendUp(false);
     }
   }
   useEffect(() => {
@@ -31,16 +34,55 @@ export default function Home() {
 
   async function upload() {
     const files = fileRef.current?.files;
-    if (!files || files.length === 0) return;
+    if (!files || files.length === 0) {
+      setStatus({ msg: "Pick a PDF first.", ok: false });
+      return;
+    }
     setBusy(true);
+    setStatus({ msg: "Uploading and indexing…", ok: true });
     const fd = new FormData();
     Array.from(files).forEach((f) => fd.append("files", f));
     try {
-      await fetch(`${API}/upload`, { method: "POST", body: fd });
+      const res = await fetch(`${API}/upload`, { method: "POST", body: fd });
+      const data = await res.json();
+      const results = data.results ?? [];
+      const failed = results.filter((r: any) => r.error);
+      const indexedNow = results.reduce(
+        (n: number, r: any) => n + (r.chunks_indexed ?? 0),
+        0
+      );
+      if (failed.length > 0) {
+        // Surface the backend's actual reason (bad key, rate limit, scanned PDF…)
+        setStatus({ msg: `Upload failed: ${failed[0].error}`, ok: false });
+      } else {
+        setStatus({ msg: `Indexed ${indexedNow} chunks. Ask a question below.`, ok: true });
+      }
       await refresh();
+    } catch (e: any) {
+      setStatus({
+        msg: `Could not reach the backend at ${API}. Is 2-start-backend.bat running?`,
+        ok: false,
+      });
     } finally {
       setBusy(false);
       if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  async function clearAll() {
+    if (busy) return;
+    if (!confirm("Remove all indexed documents?")) return;
+    setBusy(true);
+    setStatus({ msg: "Clearing…", ok: true });
+    try {
+      await fetch(`${API}/clear`, { method: "POST" });
+      setMessages([]);
+      setStatus({ msg: "Cleared. Upload a PDF to start fresh.", ok: true });
+      await refresh();
+    } catch {
+      setStatus({ msg: "Could not reach the backend to clear.", ok: false });
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -101,12 +143,26 @@ export default function Home() {
       <h1>DocChat RAG</h1>
       <p className="sub">Upload PDFs and ask questions. Answers are grounded in your documents with citations.</p>
 
+      {backendUp === false && (
+        <div className="banner err">
+          Backend not reachable at {API}. Start it with 2-start-backend.bat and refresh.
+        </div>
+      )}
+
       <div className="card">
         <div className="row">
           <input ref={fileRef} type="file" accept="application/pdf" multiple />
           <button onClick={upload} disabled={busy}>Upload &amp; index</button>
           <span className="pill">{indexed} chunks indexed</span>
+          {indexed > 0 && (
+            <button onClick={clearAll} disabled={busy} className="ghost">Clear all</button>
+          )}
         </div>
+        {status && (
+          <p className={status.ok ? "muted" : "err-text"} style={{ marginTop: 10 }}>
+            {status.msg}
+          </p>
+        )}
         {sources.length > 0 && (
           <p className="muted" style={{ marginTop: 10 }}>Sources: {sources.join(", ")}</p>
         )}

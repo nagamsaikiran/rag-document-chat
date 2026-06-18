@@ -14,11 +14,10 @@ a **provider-agnostic LLM layer**, a **hallucination guardrail**, and an
 
 ## Demo
 
-> Record a 30–60s GIF/Loom of: upload a PDF → ask a question → watch the answer
-> stream with citations → ask an out-of-scope question and watch it refuse.
-> Embed it here. (A demo GIF does ~90% of what a live URL does for a reviewer.)
+![DocChat RAG demo](docs/demo.gif)
 
-`![demo](docs/demo.gif)`
+*Upload a PDF → ask questions → answers stream in with inline citations → out-of-scope
+questions are refused instead of answered.* &nbsp; [▶ Watch full-quality video](docs/demo.mp4)
 
 ---
 
@@ -63,7 +62,7 @@ These are the parts most demos skip — and the parts interviewers probe:
 
 | Decision | What I did | Why |
 |---|---|---|
-| **Provider abstraction** | LLM + embeddings sit behind ABCs (`app/llm/base.py`); OpenAI is one implementation wired in `factory.py`. | Swap to Anthropic / Ollama / local by adding one file — no change to RAG, API, or tests. Portability is an engineering signal. |
+| **Provider abstraction** | LLM + embeddings sit behind ABCs (`app/llm/base.py`); **OpenAI and Google Gemini** are both implemented and selectable via one env var. | Swap providers (or add Anthropic / Ollama) by adding one file — no change to RAG, API, or tests. Portability is an engineering signal, and Gemini's free tier means the app runs at $0. |
 | **Chunking** | Recursive splitter that breaks on paragraph → line → sentence → word before hard-cutting. | Fixed-size slicing splits mid-sentence and pollutes retrieval. Coherent chunks retrieve better. |
 | **Grounding guardrail** | If the best chunk's cosine distance is above a threshold, the system refuses instead of answering. | Stops the classic RAG failure mode: confidently answering from the model's memory when the docs don't contain the answer. |
 | **Citations** | Context blocks are numbered; the model must cite them; the API returns source + page + snippet. | Makes every claim auditable — the difference between a toy and something trustworthy. |
@@ -75,7 +74,7 @@ These are the parts most demos skip — and the parts interviewers probe:
 ## Tech stack
 
 - **Backend:** Python, FastAPI, Pydantic, pypdf, ChromaDB
-- **LLM/Embeddings:** OpenAI (`gpt-4o-mini`, `text-embedding-3-small`) behind a swappable interface
+- **LLM/Embeddings:** OpenAI (`gpt-4o-mini`) or Google Gemini (`gemini-1.5-flash`, free tier) behind a swappable interface
 - **Frontend:** Next.js (App Router), React, TypeScript
 - **Vector store:** Chroma (persistent, cosine space)
 
@@ -83,12 +82,31 @@ These are the parts most demos skip — and the parts interviewers probe:
 
 ## Quickstart
 
-### 1. Backend
+### Easiest path (Windows, one click)
+
+Three helper scripts in the project root automate the whole setup. Run them in order:
+
+| Script | What it does |
+|---|---|
+| **`1-setup.bat`** | Checks Python/Node, creates the backend virtual environment, installs all dependencies, and creates your `.env` files. Run once. |
+| **`2-start-backend.bat`** | Starts the FastAPI backend on `http://localhost:8000`. Leave the window open. |
+| **`3-start-frontend.bat`** | Starts the Next.js frontend on `http://localhost:3000`. Leave the window open. |
+
+After `1-setup.bat`, open `backend\.env`, paste your free **`GEMINI_API_KEY`** (get one at
+[aistudio.google.com/apikey](https://aistudio.google.com/apikey)) into the `GEMINI_API_KEY=` line,
+save, then run scripts 2 and 3 and open **http://localhost:3000**.
+
+> The app defaults to **Google Gemini's free tier**, so it runs at $0. To use OpenAI instead,
+> set `LLM_PROVIDER=openai` and `EMBEDDING_PROVIDER=openai` in `.env` and add `OPENAI_API_KEY`.
+
+### Manual path (any OS)
+
+#### 1. Backend
 ```bash
 cd backend
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env        # add your OPENAI_API_KEY
+cp .env.example .env        # defaults to Gemini (free) — add your GEMINI_API_KEY
 uvicorn app.main:app --reload --port 8000
 ```
 
@@ -100,13 +118,39 @@ cp .env.local.example .env.local
 npm run dev                 # http://localhost:3000
 ```
 
-### 3. Use it
+#### 3. Use it
 Upload a PDF in the UI, then ask questions. Or via API:
 ```bash
 curl -F "files=@yourdoc.pdf" http://localhost:8000/upload
 curl -X POST http://localhost:8000/chat -H "Content-Type: application/json" \
      -d '{"question":"What is the refund window?"}'
 ```
+
+---
+
+## Try it with a sample document
+
+No PDF handy? Use the classic **"Attention Is All You Need"** paper (the Transformer paper) —
+it's public, text-based, and fact-dense, which makes citations and the guardrail easy to show:
+
+- Download: **https://arxiv.org/pdf/1706.03762**
+
+Upload it, then ask these questions. The first four are answerable from the paper (you'll get
+cited answers); the last one is **not** in the paper, so the app should refuse instead of
+guessing — that's the grounding guardrail in action:
+
+| Question | Expected |
+|---|---|
+| What is the name of the architecture proposed in this paper? | The Transformer |
+| How many layers are in the encoder and decoder stacks? | 6 each (N = 6) |
+| How many attention heads does the model use? | 8 |
+| What BLEU score did the model achieve on English-to-German translation? | 28.4 |
+| *What is the capital of Australia?* | **Refuses** — not covered by the document |
+
+> Tip for a demo recording (~45s): upload → ask the architecture question and watch the answer
+> stream in with a `[1]` citation → ask one more → finish with the out-of-scope question so the
+> refusal lands as the closing shot. Save the recording as `docs/demo.gif` to populate the Demo
+> section above.
 
 ---
 

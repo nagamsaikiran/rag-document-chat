@@ -7,16 +7,19 @@ from functools import lru_cache
 
 from app.config import get_settings
 from app.llm.base import EmbeddingProvider, LLMProvider
+from app.llm.gemini_provider import GeminiEmbeddings, GeminiLLM
 from app.llm.openai_provider import OpenAIEmbeddings, OpenAILLM
 
 _LLMS = {
     "openai": OpenAILLM,
+    "gemini": GeminiLLM,
     # "anthropic": AnthropicLLM,
     # "ollama": OllamaLLM,
 }
 
 _EMBEDDERS = {
     "openai": OpenAIEmbeddings,
+    "gemini": GeminiEmbeddings,
     # "ollama": OllamaEmbeddings,
 }
 

@@ -19,3 +19,7 @@ frontend/.env.local
 # OS
 .DS_Store
 /.vs
+
+# Large raw recordings (the compressed versions live in docs/)
+/demo.mp4
+*.mov
