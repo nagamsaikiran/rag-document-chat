@@ -56,21 +56,6 @@ answers with inline `[1]`/`[2]` citations streamed back to the UI.
 
 ---
 
-## Why this isn't a tutorial clone
-
-These are the parts most demos skip — and the parts interviewers probe:
-
-| Decision | What I did | Why |
-|---|---|---|
-| **Provider abstraction** | LLM + embeddings sit behind ABCs (`app/llm/base.py`); **OpenAI and Google Gemini** are both implemented and selectable via one env var. | Swap providers (or add Anthropic / Ollama) by adding one file — no change to RAG, API, or tests. Portability is an engineering signal, and Gemini's free tier means the app runs at $0. |
-| **Chunking** | Recursive splitter that breaks on paragraph → line → sentence → word before hard-cutting. | Fixed-size slicing splits mid-sentence and pollutes retrieval. Coherent chunks retrieve better. |
-| **Grounding guardrail** | If the best chunk's cosine distance is above a threshold, the system refuses instead of answering. | Stops the classic RAG failure mode: confidently answering from the model's memory when the docs don't contain the answer. |
-| **Citations** | Context blocks are numbered; the model must cite them; the API returns source + page + snippet. | Makes every claim auditable — the difference between a toy and something trustworthy. |
-| **Streaming** | SSE token streaming end-to-end. | Real UX expectation for chat; also proves the async path works. |
-| **Evaluation** | Harness scores retrieval hit-rate, answer correctness, and faithfulness (LLM-as-judge), including negative/out-of-scope tests. | You can't improve what you don't measure. This is the strongest seniority signal in the repo. |
-
----
-
 ## Tech stack
 
 - **Backend:** Python, FastAPI, Pydantic, pypdf, ChromaDB
@@ -145,38 +130,8 @@ guessing — that's the grounding guardrail in action:
 | How many layers are in the encoder and decoder stacks? | 6 each (N = 6) |
 | How many attention heads does the model use? | 8 |
 | What BLEU score did the model achieve on English-to-German translation? | 28.4 |
-| *What is the capital of Australia?* | **Refuses** — not covered by the document |
+| *What is the capital of Canada?* | **Refuses** — not covered by the document |
 
-> Tip for a demo recording (~45s): upload → ask the architecture question and watch the answer
-> stream in with a `[1]` citation → ask one more → finish with the out-of-scope question so the
-> refusal lands as the closing shot. Save the recording as `docs/demo.gif` to populate the Demo
-> section above.
-
----
-
-## Evaluation
-
-Create `backend/eval/questions.json` from the provided example, then:
-```bash
-cd backend
-python -m eval.run_eval --questions eval/questions.json
-```
-
-Sample output:
-```
-=== RAG Eval Results ===
-- What is the refund window described in the policy?  | retrieval=True correct=True faithfulness=5/5 grounded=True
-- Who is responsible for return shipping costs?       | retrieval=True correct=True faithfulness=5/5 grounded=True
-- What is the capital of France?                      | retrieval=None correct=True faithfulness=5/5 grounded=False
-
---- Aggregate ---
-Retrieval hit-rate : 100%  (2/2)
-Answer correctness : 100%  (3/3)
-Mean faithfulness  : 5.00/5
-```
-
-> Replace with **your own numbers** on **your own documents** — real metrics on a
-> real corpus are what make this credible. Document any failures you found and fixed.
 
 ---
 
@@ -225,11 +180,3 @@ frontend/
 ```
 
 ---
-
-## Deploying (optional)
-
-- **Frontend:** Vercel (zero-config for Next.js).
-- **Backend:** Render / Railway / Fly.io (containerize FastAPI). Set `OPENAI_API_KEY`
-  and point the frontend's `NEXT_PUBLIC_API_URL` at it.
-- Rate-limit the public demo or let visitors paste their own API key so it doesn't
-  run up cost.
