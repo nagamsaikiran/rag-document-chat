@@ -17,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from app.config import get_settings
 from app.ingestion import chunk_pdf
 from app.rag import answer, answer_stream
 from app.vectorstore import get_store
@@ -41,10 +42,12 @@ def readable_error(e: Exception) -> str:
 
 app = FastAPI(title="DocChat RAG", version="1.0.0")
 
-# Open CORS for local dev; tighten to your frontend origin in production.
+# CORS origins are configurable; defaults to "*" for local dev. Set CORS_ORIGINS
+# (comma-separated) to your real frontend origin in production.
+_origins = [o.strip() for o in get_settings().cors_origins.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_origins or ["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -56,7 +59,12 @@ class ChatRequest(BaseModel):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "indexed_chunks": get_store().count()}
+    from app.config import get_settings
+    return {
+        "status": "ok",
+        "indexed_chunks": get_store().count(),
+        "multimodal": get_settings().multimodal,
+    }
 
 
 @app.get("/sources")
@@ -73,22 +81,32 @@ def clear():
 @app.post("/upload")
 async def upload(files: list[UploadFile] = File(...)):
     store = get_store()
+    settings = get_settings()
+    max_bytes = settings.max_upload_mb * 1024 * 1024
     summary = []
     for f in files:
         if not f.filename.lower().endswith(".pdf"):
             summary.append({"file": f.filename, "error": "only .pdf supported"})
             continue
-        # Persist to a temp path because pypdf wants a file path/handle.
+        data = await f.read()
+        if len(data) > max_bytes:
+            summary.append({
+                "file": f.filename,
+                "error": f"File too large ({len(data) // (1024*1024)} MB). "
+                         f"Limit is {settings.max_upload_mb} MB.",
+            })
+            continue
+        # Persist to a temp path because the PDF readers want a file path/handle.
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-            tmp.write(await f.read())
+            tmp.write(data)
             tmp_path = tmp.name
         try:
             chunks = chunk_pdf(tmp_path, f.filename)
             if not chunks:
                 summary.append({
                     "file": f.filename,
-                    "error": "No extractable text found. Is this a scanned/image PDF? "
-                             "(OCR is not supported.)",
+                    "error": "No extractable text found. If this is a scanned/image "
+                             "PDF, enable MULTIMODAL to read it with the vision model.",
                 })
                 continue
             added = store.add(chunks)

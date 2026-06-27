@@ -56,12 +56,29 @@ answers with inline `[1]`/`[2]` citations streamed back to the UI.
 
 ---
 
+## Why this isn't a tutorial clone
+
+These are the parts most demos skip — and the parts interviewers probe:
+
+| Decision | What I did | Why |
+|---|---|---|
+| **Provider abstraction** | LLM + embeddings sit behind ABCs (`app/llm/base.py`); **OpenAI and Google Gemini** both implemented, selectable via one env var. | Swap providers by adding one file — no change to RAG, API, or tests. Gemini's free tier means it runs at $0. |
+| **Multimodal ingestion** | Pages rendered with PyMuPDF and read by a vision model into Markdown — tables, charts, figures, and scanned text. | Plain text extraction misses everything that isn't a text layer. Vision captures the whole page. |
+| **Grounding guardrail** | If the best chunk's distance exceeds a threshold, the system refuses instead of answering. | Stops the classic RAG failure: answering from the model's memory when the docs don't contain the answer. |
+| **Citations** | Numbered context; the model must cite; the API returns source + page + snippet. | Every claim is auditable — the difference between a toy and something trustworthy. |
+| **Evaluation** | Harness scores retrieval hit-rate, answer correctness, and faithfulness (LLM-as-judge), incl. negative tests. | You can't improve what you don't measure — the strongest seniority signal in the repo. |
+| **Security** | `pip-audit` (0 CVEs), upload size/page caps, configurable CORS, secrets kept out of git. | Shows production awareness. See [SECURITY.md](SECURITY.md). |
+
+---
+
 ## Tech stack
 
-- **Backend:** Python, FastAPI, Pydantic, pypdf, ChromaDB
-- **LLM/Embeddings:** OpenAI (`gpt-4o-mini`) or Google Gemini (`gemini-1.5-flash`, free tier) behind a swappable interface
+- **Backend:** Python, FastAPI, Pydantic, pypdf, PyMuPDF, ChromaDB
+- **LLM/Embeddings:** OpenAI (`gpt-4o-mini`) or Google Gemini (`gemini-2.5-flash`, free tier) behind a swappable interface
+- **Multimodal:** vision model reads tables, charts, figures, and scanned pages (PyMuPDF render → vision transcription)
 - **Frontend:** Next.js (App Router), React, TypeScript
 - **Vector store:** Chroma (persistent, cosine space)
+- **Security:** dependency audit (pip-audit, 0 CVEs), upload size/page limits, configurable CORS — see [SECURITY.md](SECURITY.md)
 
 ---
 
@@ -148,8 +165,8 @@ without letting the guardrail leak.
 
 Being explicit about tradeoffs is part of the point:
 
-- **PDF text extraction only** — scanned/image PDFs need OCR (e.g. Tesseract). Easy next step.
-- **Single in-memory store, no auth/multi-tenant** — fine for a demo, not for prod. Would add per-user namespaces.
+- **Multimodal ingestion** — when `MULTIMODAL` is on, pages are rendered and read by a vision model, so tables, charts, figures, and scanned PDFs are captured (one vision call per page; toggle off for fast text-only mode).
+- **No auth/multi-tenant** — fine for a single-user demo, not for prod. Would add per-user namespaces and authentication (see [SECURITY.md](SECURITY.md)).
 - **LLM-as-judge is approximate** — good for relative comparison, not ground truth; a human-labeled set would be stronger.
 - **No reranking** — adding a cross-encoder reranker after vector retrieval would likely lift precision.
 - **Agentic upgrade** — let the model decide *when* to retrieve and add a second tool (web search) to make this an agentic RAG system.

@@ -18,6 +18,15 @@ class LLMProvider(ABC):
     def stream(self, system: str, user: str) -> Iterator[str]:
         """Yield completion tokens/chunks as they arrive."""
 
+    # Optional vision capability. Providers backed by a multimodal model override
+    # this; others inherit the explicit "not supported" default. Used by the
+    # multimodal ingestion path to transcribe a page image into markdown.
+    def transcribe_image(self, image_bytes: bytes, mime_type: str, prompt: str) -> str:
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support image transcription. "
+            "Use a multimodal provider/model, or disable MULTIMODAL."
+        )
+
 
 class EmbeddingProvider(ABC):
     @abstractmethod

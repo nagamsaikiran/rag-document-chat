@@ -21,19 +21,76 @@ class Chunk:
     chunk_id: str = field(default="")
 
 
-def load_pdf_pages(path: str, source_name: str) -> List[tuple[int, str]]:
-    """Return [(page_number, page_text)] for a PDF, skipping empty pages.
+# Instruction given to the vision model for each page image.
+_VISION_PROMPT = (
+    "Transcribe this document page into clean Markdown. Rules:\n"
+    "- Preserve reading order.\n"
+    "- Render any tables as proper Markdown tables, keeping rows and columns.\n"
+    "- For charts, graphs, photos, logos or diagrams, insert a concise description "
+    "in the form: [Figure: <what it shows, including any numbers/labels>].\n"
+    "- Do not add commentary or invent content. Output only the page content."
+)
 
-    Uses pypdf — fast and reliable for text-based PDFs. (pdfplumber extracts
-    slightly cleaner text but is several times slower, which hurt upload speed.)
-    """
+
+def _check_page_limit(n_pages: int) -> None:
+    limit = get_settings().max_pages
+    if n_pages > limit:
+        raise ValueError(
+            f"PDF has {n_pages} pages; the limit is {limit}. "
+            "Split the document or raise MAX_PAGES."
+        )
+
+
+def load_pdf_pages_text(path: str) -> List[tuple[int, str]]:
+    """Fast path: extract the embedded text layer with pypdf."""
     reader = PdfReader(path)
+    _check_page_limit(len(reader.pages))
     pages = []
     for i, page in enumerate(reader.pages):
         text = (page.extract_text() or "").strip()
         if text:
             pages.append((i + 1, text))
     return pages
+
+
+def load_pdf_pages_vision(path: str) -> List[tuple[int, str]]:
+    """Multimodal path: render each page to an image and have a vision model
+    transcribe it into Markdown — captures tables, charts, figures, and scanned
+    text that the plain text layer misses."""
+    import fitz  # PyMuPDF, imported lazily so text-only mode needs no dep
+
+    from app.llm.factory import get_llm
+
+    llm = get_llm()
+    dpi = get_settings().multimodal_dpi
+    pages = []
+    doc = fitz.open(path)
+    try:
+        _check_page_limit(doc.page_count)
+        for i in range(len(doc)):
+            png = doc[i].get_pixmap(dpi=dpi).tobytes("png")
+            text = llm.transcribe_image(png, "image/png", _VISION_PROMPT).strip()
+            if text:
+                pages.append((i + 1, text))
+    finally:
+        doc.close()
+    return pages
+
+
+def load_pdf_pages(path: str, source_name: str) -> List[tuple[int, str]]:
+    """Return [(page_number, page_text)] for a PDF, skipping empty pages.
+
+    Uses the vision model when MULTIMODAL is on (and the provider supports it),
+    otherwise the fast pypdf text path. If the provider has no vision support we
+    cleanly fall back to text; real vision errors (bad key, rate limit) propagate
+    so they are surfaced rather than silently degrading quality.
+    """
+    if get_settings().multimodal:
+        try:
+            return load_pdf_pages_vision(path)
+        except NotImplementedError:
+            pass  # provider has no vision; use the text path instead
+    return load_pdf_pages_text(path)
 
 
 _SEPARATORS = ["\n\n", "\n", ". ", " "]
