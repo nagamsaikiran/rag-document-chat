@@ -48,6 +48,18 @@ class GeminiLLM(LLMProvider):
             if getattr(chunk, "text", None):
                 yield chunk.text
 
+    def transcribe_image(self, image_bytes: bytes, mime_type: str, prompt: str) -> str:
+        # gemini-2.5-flash is multimodal; send the page image + instruction.
+        resp = _client().models.generate_content(
+            model=self.model_name,
+            contents=[
+                types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+                prompt,
+            ],
+            config=types.GenerateContentConfig(temperature=0.0),
+        )
+        return resp.text or ""
+
 
 class GeminiEmbeddings(EmbeddingProvider):
     def __init__(self) -> None:

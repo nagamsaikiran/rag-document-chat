@@ -1,4 +1,5 @@
 """OpenAI implementation of the LLM and embedding interfaces."""
+import base64
 from typing import Iterator, List
 
 from openai import OpenAI
@@ -45,6 +46,25 @@ class OpenAILLM(LLMProvider):
             delta = chunk.choices[0].delta.content
             if delta:
                 yield delta
+
+    def transcribe_image(self, image_bytes: bytes, mime_type: str, prompt: str) -> str:
+        # gpt-4o / gpt-4o-mini are multimodal; pass the image as a data URL.
+        b64 = base64.b64encode(image_bytes).decode()
+        resp = _client().chat.completions.create(
+            model=self.model,
+            temperature=0.0,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url",
+                         "image_url": {"url": f"data:{mime_type};base64,{b64}"}},
+                    ],
+                }
+            ],
+        )
+        return resp.choices[0].message.content or ""
 
 
 class OpenAIEmbeddings(EmbeddingProvider):
