@@ -27,14 +27,13 @@ function track(event: string, params: Record<string, unknown> = {}) {
 // so the backend keeps each visitor's documents isolated (no login needed).
 function sessionId(): string {
   if (typeof window === "undefined") return "public";
-  let id = localStorage.getItem("docchat_sid");
-  if (!id) {
-    id =
-      (crypto as any).randomUUID?.() ??
-      Math.random().toString(36).slice(2) + Date.now().toString(36);
-    localStorage.setItem("docchat_sid", id);
-  }
-  return id;
+  const existing = localStorage.getItem("docchat_sid");
+  if (existing) return existing;
+  const fresh: string =
+    (crypto as any).randomUUID?.() ||
+    Math.random().toString(36).slice(2) + Date.now().toString(36);
+  localStorage.setItem("docchat_sid", fresh);
+  return fresh;
 }
 function sessionHeader(): Record<string, string> {
   return { "X-Session-Id": sessionId() };
