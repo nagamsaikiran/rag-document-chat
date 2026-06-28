@@ -1,5 +1,7 @@
 # DocChat RAG — Grounded Document Q&A with Citations
 
+[![CI](https://github.com/nagamsaikiran/rag-document-chat/actions/workflows/ci.yml/badge.svg)](https://github.com/nagamsaikiran/rag-document-chat/actions/workflows/ci.yml)
+
 A production-shaped Retrieval-Augmented Generation (RAG) application: upload PDFs,
 ask questions, and get answers that are **grounded in your documents**, **cited
 back to the exact source and page**, and **streamed token-by-token**. Ships with
