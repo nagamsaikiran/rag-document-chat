@@ -23,6 +23,23 @@ function track(event: string, params: Record<string, unknown> = {}) {
   (window as any).gtag?.("event", event, params);
 }
 
+// A per-browser session id, persisted in localStorage. Sent with every request
+// so the backend keeps each visitor's documents isolated (no login needed).
+function sessionId(): string {
+  if (typeof window === "undefined") return "public";
+  let id = localStorage.getItem("docchat_sid");
+  if (!id) {
+    id =
+      (crypto as any).randomUUID?.() ??
+      Math.random().toString(36).slice(2) + Date.now().toString(36);
+    localStorage.setItem("docchat_sid", id);
+  }
+  return id;
+}
+function sessionHeader(): Record<string, string> {
+  return { "X-Session-Id": sessionId() };
+}
+
 type Citation = { marker: number; source: string; page: number; snippet: string };
 type Message = { role: "user" | "assistant"; text: string; citations?: Citation[] };
 
@@ -39,10 +56,10 @@ export default function Home() {
 
   async function refresh() {
     try {
-      const h = await fetch(`${API}/health`).then((r) => r.json());
+      const h = await fetch(`${API}/health`, { headers: sessionHeader() }).then((r) => r.json());
       setIndexed(h.indexed_chunks ?? 0);
       setBackendUp(true);
-      const s = await fetch(`${API}/sources`).then((r) => r.json());
+      const s = await fetch(`${API}/sources`, { headers: sessionHeader() }).then((r) => r.json());
       setSources(s.sources ?? []);
     } catch {
       setBackendUp(false);
@@ -67,7 +84,7 @@ export default function Home() {
     Array.from(files).forEach((f) => fd.append("files", f));
     fd.append("multimodal", String(vision));
     try {
-      const res = await fetch(`${API}/upload`, { method: "POST", body: fd });
+      const res = await fetch(`${API}/upload`, { method: "POST", body: fd, headers: sessionHeader() });
       const data = await res.json();
       const results = data.results ?? [];
       const failed = results.filter((r: any) => r.error);
@@ -101,7 +118,7 @@ export default function Home() {
     setBusy(true);
     setStatus({ msg: "Clearing…", ok: true });
     try {
-      await fetch(`${API}/clear`, { method: "POST" });
+      await fetch(`${API}/clear`, { method: "POST", headers: sessionHeader() });
       setMessages([]);
       setStatus({ msg: "Cleared. Upload a PDF to start fresh.", ok: true });
       await refresh();
@@ -123,7 +140,7 @@ export default function Home() {
     try {
       const res = await fetch(`${API}/chat/stream`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...sessionHeader() },
         body: JSON.stringify({ question: q }),
       });
       const reader = res.body!.getReader();
