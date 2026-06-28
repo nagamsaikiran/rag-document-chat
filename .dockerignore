@@ -1,0 +1,15 @@
+# Don't send these into the Docker build context
+**/node_modules
+**/.next
+**/out
+**/.venv
+**/venv
+**/__pycache__
+**/*.pyc
+backend/.chroma
+**/.env
+**/.env.local
+.git
+.vs
+docs/demo.mp4
+demo.mp4

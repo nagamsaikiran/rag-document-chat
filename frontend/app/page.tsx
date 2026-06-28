@@ -2,7 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// Unset (local dev) -> talk to the backend on :8000. Set to "" in the deployed
+// container -> use relative paths (same origin as the served frontend).
+const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
+// Fire a Google Analytics event if GA is loaded (no-op otherwise).
+function track(event: string, params: Record<string, unknown> = {}) {
+  (window as any).gtag?.("event", event, params);
+}
 
 type Citation = { marker: number; source: string; page: number; snippet: string };
 type Message = { role: "user" | "assistant"; text: string; citations?: Citation[] };
@@ -13,6 +20,7 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [indexed, setIndexed] = useState(0);
   const [sources, setSources] = useState<string[]>([]);
+  const [vision, setVision] = useState(false);
   const [status, setStatus] = useState<{ msg: string; ok: boolean } | null>(null);
   const [backendUp, setBackendUp] = useState<boolean | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -39,9 +47,13 @@ export default function Home() {
       return;
     }
     setBusy(true);
-    setStatus({ msg: "Uploading and indexing…", ok: true });
+    setStatus({
+      msg: vision ? "Uploading and reading with vision (slower)…" : "Uploading and indexing…",
+      ok: true,
+    });
     const fd = new FormData();
     Array.from(files).forEach((f) => fd.append("files", f));
+    fd.append("multimodal", String(vision));
     try {
       const res = await fetch(`${API}/upload`, { method: "POST", body: fd });
       const data = await res.json();
@@ -54,8 +66,10 @@ export default function Home() {
       if (failed.length > 0) {
         // Surface the backend's actual reason (bad key, rate limit, scanned PDF…)
         setStatus({ msg: `Upload failed: ${failed[0].error}`, ok: false });
+        track("pdf_upload_failed", { reason: failed[0].error });
       } else {
         setStatus({ msg: `Indexed ${indexedNow} chunks. Ask a question below.`, ok: true });
+        track("pdf_uploaded", { chunks: indexedNow, files: results.length });
       }
       await refresh();
     } catch (e: any) {
@@ -92,6 +106,7 @@ export default function Home() {
     setInput("");
     setMessages((m) => [...m, { role: "user", text: q }, { role: "assistant", text: "" }]);
     setBusy(true);
+    track("question_asked", { length: q.length });
 
     try {
       const res = await fetch(`${API}/chat/stream`, {
@@ -158,6 +173,15 @@ export default function Home() {
             <button onClick={clearAll} disabled={busy} className="ghost">Clear all</button>
           )}
         </div>
+        <label className="toggle" title="Reads tables, charts, and figures with a vision model. Slower and uses more quota.">
+          <input
+            type="checkbox"
+            checked={vision}
+            onChange={(e) => setVision(e.target.checked)}
+            disabled={busy}
+          />
+          Read tables &amp; images
+        </label>
         {status && (
           <p className={status.ok ? "muted" : "err-text"} style={{ marginTop: 10 }}>
             {status.msg}

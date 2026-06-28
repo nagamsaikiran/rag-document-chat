@@ -1,0 +1,20 @@
+# Render Blueprint: one Docker web service for the whole app.
+# In Render: New + → Blueprint → pick this repo. Then set GEMINI_API_KEY
+# (and optionally NEXT_PUBLIC_GA_ID as a build-time var) in the dashboard.
+services:
+  - type: web
+    name: docchat-rag
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false          # set this secret in the Render dashboard
+      - key: LLM_PROVIDER
+        value: gemini
+      - key: EMBEDDING_PROVIDER
+        value: gemini
+      - key: MULTIMODAL
+        value: "false"       # vision is opt-in per upload (saves quota)
+      - key: RATE_LIMIT_PER_MIN
+        value: "20"
