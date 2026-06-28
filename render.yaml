@@ -6,7 +6,6 @@ services:
     name: docchat-rag
     runtime: docker
     plan: free
-    branch: prod          # deploy the live branch; merge master -> prod to release
     dockerfilePath: ./Dockerfile
     envVars:
       - key: GEMINI_API_KEY
