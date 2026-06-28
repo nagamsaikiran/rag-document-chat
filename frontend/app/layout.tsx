@@ -51,6 +51,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <head>
+        <link rel="icon" type="image/svg+xml" href="/icon.svg" />
         <style dangerouslySetInnerHTML={{ __html: GLOBAL_CSS }} />
         {GA_ID && (
           <>
