@@ -2,9 +2,21 @@
 
 import { useEffect, useRef, useState } from "react";
 
-// Unset (local dev) -> talk to the backend on :8000. Set to "" in the deployed
-// container -> use relative paths (same origin as the served frontend).
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+// Resolve the backend base URL at runtime (in the browser), so it's correct
+// whether running locally or deployed — no reliance on build-time env vars:
+//   - explicit NEXT_PUBLIC_API_URL wins if set to a real value
+//   - on localhost (dev) -> the separate backend on :8000
+//   - anywhere else (deployed) -> same origin as the served frontend ("")
+function resolveApiBase(): string {
+  const fromEnv = process.env.NEXT_PUBLIC_API_URL;
+  if (fromEnv) return fromEnv;
+  if (typeof window !== "undefined") {
+    const h = window.location.hostname;
+    if (h !== "localhost" && h !== "127.0.0.1") return ""; // same-origin in prod
+  }
+  return "http://localhost:8000";
+}
+const API = resolveApiBase();
 
 // Fire a Google Analytics event if GA is loaded (no-op otherwise).
 function track(event: string, params: Record<string, unknown> = {}) {
