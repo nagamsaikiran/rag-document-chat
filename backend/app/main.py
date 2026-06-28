@@ -10,11 +10,14 @@ Endpoints:
 import json
 import os
 import tempfile
+import time
 import traceback
+from collections import defaultdict
 
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from app.config import get_settings
@@ -52,6 +55,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# --- Simple in-memory per-IP rate limit on the expensive endpoints ---------
+# Protects a public deploy from quota abuse. In-memory (per process), which is
+# fine for a single free instance; use a shared store (Redis) for multi-instance.
+_HITS: dict[str, list[float]] = defaultdict(list)
+_LIMITED_PATHS = ("/upload", "/chat", "/chat/stream")
+
+
+@app.middleware("http")
+async def rate_limit(request: Request, call_next):
+    limit = get_settings().rate_limit_per_min
+    if limit and request.url.path in _LIMITED_PATHS:
+        ip = request.client.host if request.client else "?"
+        now = time.time()
+        recent = [t for t in _HITS[ip] if now - t < 60]
+        if len(recent) >= limit:
+            return JSONResponse(
+                status_code=429,
+                content={"error": "Rate limit exceeded. Please wait a minute and try again."},
+            )
+        recent.append(now)
+        _HITS[ip] = recent
+    return await call_next(request)
+
 
 class ChatRequest(BaseModel):
     question: str
@@ -79,7 +105,13 @@ def clear():
 
 
 @app.post("/upload")
-async def upload(files: list[UploadFile] = File(...)):
+async def upload(
+    files: list[UploadFile] = File(...),
+    multimodal: bool | None = Form(default=None),
+):
+    """Index PDFs. `multimodal` (form field) overrides the server default for
+    this upload: true = vision (reads tables/figures, more quota), false = fast
+    text. Omitted = use the server's MULTIMODAL setting."""
     store = get_store()
     settings = get_settings()
     max_bytes = settings.max_upload_mb * 1024 * 1024
@@ -101,7 +133,7 @@ async def upload(files: list[UploadFile] = File(...)):
             tmp.write(data)
             tmp_path = tmp.name
         try:
-            chunks = chunk_pdf(tmp_path, f.filename)
+            chunks = chunk_pdf(tmp_path, f.filename, multimodal=multimodal)
             if not chunks:
                 summary.append({
                     "file": f.filename,
@@ -143,3 +175,11 @@ def chat_stream(req: ChatRequest):
         yield "data: {\"type\": \"done\"}\n\n"
 
     return StreamingResponse(event_gen(), media_type="text/event-stream")
+
+
+# Serve the built frontend from the same origin (single-container deploy).
+# Mounted LAST so it never shadows the API routes above. No-op in local dev,
+# where STATIC_DIR is unset and the frontend runs separately on :3000.
+_static_dir = get_settings().static_dir
+if _static_dir and os.path.isdir(_static_dir):
+    app.mount("/", StaticFiles(directory=_static_dir, html=True), name="frontend")

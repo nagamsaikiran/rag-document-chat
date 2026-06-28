@@ -77,15 +77,18 @@ def load_pdf_pages_vision(path: str) -> List[tuple[int, str]]:
     return pages
 
 
-def load_pdf_pages(path: str, source_name: str) -> List[tuple[int, str]]:
+def load_pdf_pages(
+    path: str, source_name: str, multimodal: bool | None = None
+) -> List[tuple[int, str]]:
     """Return [(page_number, page_text)] for a PDF, skipping empty pages.
 
-    Uses the vision model when MULTIMODAL is on (and the provider supports it),
-    otherwise the fast pypdf text path. If the provider has no vision support we
-    cleanly fall back to text; real vision errors (bad key, rate limit) propagate
-    so they are surfaced rather than silently degrading quality.
+    Vision mode (tables/charts/figures/scanned) is used when enabled, otherwise
+    the fast pypdf text path. `multimodal` overrides the global default per call
+    (so the UI can toggle it per upload). If the provider has no vision support
+    we cleanly fall back to text; real vision errors propagate so they surface.
     """
-    if get_settings().multimodal:
+    use_vision = get_settings().multimodal if multimodal is None else multimodal
+    if use_vision:
         try:
             return load_pdf_pages_vision(path)
         except NotImplementedError:
@@ -134,10 +137,12 @@ def _recursive_split(text: str, size: int, overlap: int) -> List[str]:
     return [text[i:i + size] for i in range(0, len(text), step)]
 
 
-def chunk_pdf(path: str, source_name: str) -> List[Chunk]:
+def chunk_pdf(
+    path: str, source_name: str, multimodal: bool | None = None
+) -> List[Chunk]:
     settings = get_settings()
     chunks: List[Chunk] = []
-    for page_no, page_text in load_pdf_pages(path, source_name):
+    for page_no, page_text in load_pdf_pages(path, source_name, multimodal):
         for j, piece in enumerate(
             _recursive_split(page_text, settings.chunk_size, settings.chunk_overlap)
         ):

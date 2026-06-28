@@ -29,13 +29,20 @@ class Settings(BaseSettings):
     # model transcribe it (reads tables, charts, figures, scanned text). Slower
     # and uses one vision call per page. Falls back to fast text extraction when
     # False, or automatically if the provider has no vision support.
-    multimodal: bool = True
+    # Default OFF: vision costs more tokens/quota (one image call per page).
+    # Enable per-upload from the UI, or set MULTIMODAL=true to default it on.
+    multimodal: bool = False
     multimodal_dpi: int = 150  # render resolution; higher = clearer but bigger
 
     # Security / resource limits
-    cors_origins: str = "*"   # comma-separated allowed origins; lock down in prod
-    max_upload_mb: int = 25   # reject larger PDFs (DoS / cost guard)
-    max_pages: int = 50       # cap pages per PDF (esp. for per-page vision cost)
+    cors_origins: str = "*"        # comma-separated allowed origins; lock down in prod
+    max_upload_mb: int = 25        # reject larger PDFs (DoS / cost guard)
+    max_pages: int = 50            # cap pages per PDF (esp. for per-page vision cost)
+    rate_limit_per_min: int = 20   # per-IP requests/min on upload+chat (0 = off)
+
+    # Path to a built frontend (the Next.js `out/` dir) to serve from the same
+    # origin. Set in the container; unset in local dev (frontend runs separately).
+    static_dir: str = ""
 
     # Retrieval / chunking
     chunk_size: int = 1000

@@ -194,6 +194,40 @@ frontend/
   app/
     page.tsx             # upload + streaming chat + citations
     layout.tsx, globals.css
+Dockerfile               # single-container build (UI + API, one URL)
+render.yaml              # one-click Render Blueprint
 ```
+
+---
+
+## Deployment
+
+The app ships as a **single container** — the Next.js UI is built to static files
+and served by FastAPI, so the whole thing runs as one service on one URL (ideal
+for a custom subdomain). Vision is **off by default** in production to protect
+free-tier quota; users opt in per upload via the "Read tables & images" toggle.
+A per-IP rate limit guards the public endpoints.
+
+**Deploy to Render (free):**
+
+1. Push the repo to GitHub.
+2. Render → **New + → Blueprint** → select the repo (it reads `render.yaml`).
+3. Set **`GEMINI_API_KEY`** in the dashboard (and optionally `NEXT_PUBLIC_GA_ID`
+   as a build-time var for analytics). Deploy.
+4. You get a free URL like `docchat.onrender.com`.
+
+**Custom subdomain (Cloudflare):** in Render add `docchat.yourdomain.com` under
+Custom Domains, then add a matching `CNAME` in Cloudflare DNS pointing to the
+Render target. HTTPS is automatic.
+
+> Note: the free tier sleeps when idle and uses an ephemeral disk, so the Chroma
+> index resets on restart — fine for a demo. Add a persistent disk for durability.
+
+## Analytics
+
+Google Analytics 4 is built in. Set **`NEXT_PUBLIC_GA_ID`** (`G-XXXXXXXX`) to
+enable it; it stays off when unset (local dev). Beyond page views, the app emits
+custom events — `pdf_uploaded`, `question_asked`, `pdf_upload_failed` — so you can
+see real product usage.
 
 ---
