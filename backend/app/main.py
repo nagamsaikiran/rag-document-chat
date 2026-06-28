@@ -14,7 +14,7 @@ import time
 import traceback
 from collections import defaultdict
 
-from fastapi import FastAPI, File, Form, Request, UploadFile
+from fastapi import FastAPI, File, Form, Header, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -83,31 +83,34 @@ class ChatRequest(BaseModel):
     question: str
 
 
+# Each browser sends a unique X-Session-Id (see frontend); it scopes all
+# documents to that visitor. Defaults to "public" for header-less API calls.
 @app.get("/health")
-def health():
+def health(session_id: str = Header(default="public", alias="X-Session-Id")):
     from app.config import get_settings
     return {
         "status": "ok",
-        "indexed_chunks": get_store().count(),
+        "indexed_chunks": get_store().count(session_id),
         "multimodal": get_settings().multimodal,
     }
 
 
 @app.get("/sources")
-def sources():
-    return {"sources": get_store().sources()}
+def sources(session_id: str = Header(default="public", alias="X-Session-Id")):
+    return {"sources": get_store().sources(session_id)}
 
 
 @app.post("/clear")
-def clear():
-    get_store().clear()
-    return {"status": "cleared", "indexed_chunks": get_store().count()}
+def clear(session_id: str = Header(default="public", alias="X-Session-Id")):
+    get_store().clear(session_id)
+    return {"status": "cleared", "indexed_chunks": get_store().count(session_id)}
 
 
 @app.post("/upload")
 async def upload(
     files: list[UploadFile] = File(...),
     multimodal: bool | None = Form(default=None),
+    session_id: str = Header(default="public", alias="X-Session-Id"),
 ):
     """Index PDFs. `multimodal` (form field) overrides the server default for
     this upload: true = vision (reads tables/figures, more quota), false = fast
@@ -141,7 +144,7 @@ async def upload(
                              "PDF, enable MULTIMODAL to read it with the vision model.",
                 })
                 continue
-            added = store.add(chunks)
+            added = store.add(chunks, session_id)
             summary.append({"file": f.filename, "chunks_indexed": added})
         except Exception as e:
             # Most likely the embedding provider call failed (bad/missing API key,
@@ -150,23 +153,23 @@ async def upload(
             summary.append({"file": f.filename, "error": readable_error(e)})
         finally:
             os.unlink(tmp_path)
-    return {"results": summary, "total_indexed_chunks": store.count()}
+    return {"results": summary, "total_indexed_chunks": store.count(session_id)}
 
 
 @app.post("/chat")
-def chat(req: ChatRequest):
+def chat(req: ChatRequest, session_id: str = Header(default="public", alias="X-Session-Id")):
     try:
-        return answer(req.question)
+        return answer(req.question, session_id)
     except Exception as e:
         traceback.print_exc()
         return {"answer": f"[Error] {type(e).__name__}: {e}", "citations": [], "grounded": False}
 
 
 @app.post("/chat/stream")
-def chat_stream(req: ChatRequest):
+def chat_stream(req: ChatRequest, session_id: str = Header(default="public", alias="X-Session-Id")):
     def event_gen():
         try:
-            for event in answer_stream(req.question):
+            for event in answer_stream(req.question, session_id):
                 yield f"data: {json.dumps(event)}\n\n"
         except Exception as e:
             traceback.print_exc()

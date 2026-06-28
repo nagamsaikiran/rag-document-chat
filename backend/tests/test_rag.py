@@ -6,7 +6,7 @@ class _Store:
     def __init__(self, distance):
         self._d = distance
 
-    def query(self, q, top_k=None):
+    def query(self, q, session_id="public", top_k=None):
         return [{"text": "the answer text", "source": "f.pdf", "page": 2, "distance": self._d}]
 
 

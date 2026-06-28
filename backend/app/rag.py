@@ -37,10 +37,10 @@ def _build_user_prompt(question: str, context: str) -> str:
     )
 
 
-def _retrieve(question: str) -> Tuple[List[dict], bool]:
+def _retrieve(question: str, session_id: str) -> Tuple[List[dict], bool]:
     """Return (hits, is_grounded). is_grounded is False when nothing is relevant."""
     settings = get_settings()
-    hits = get_store().query(question)
+    hits = get_store().query(question, session_id)
     grounded = bool(hits) and hits[0]["distance"] <= settings.relevance_distance_threshold
     return hits, grounded
 
@@ -58,9 +58,9 @@ NO_ANSWER = (
 )
 
 
-def answer(question: str) -> dict:
+def answer(question: str, session_id: str = "public") -> dict:
     """Non-streaming answer (used by the eval harness and /chat)."""
-    hits, grounded = _retrieve(question)
+    hits, grounded = _retrieve(question, session_id)
     if not grounded:
         return {"answer": NO_ANSWER, "citations": [], "grounded": False}
     context = _format_context(hits)
@@ -72,9 +72,9 @@ def answer(question: str) -> dict:
     }
 
 
-def answer_stream(question: str) -> Iterator[dict]:
+def answer_stream(question: str, session_id: str = "public") -> Iterator[dict]:
     """Yield events for SSE-style streaming: token deltas then a final citations event."""
-    hits, grounded = _retrieve(question)
+    hits, grounded = _retrieve(question, session_id)
     if not grounded:
         yield {"type": "token", "data": NO_ANSWER}
         yield {"type": "citations", "data": []}
