@@ -69,17 +69,28 @@ class GeminiEmbeddings(EmbeddingProvider):
     # batch. A multi-page PDF easily exceeds this in a single upload.
     _BATCH = 100
 
-    def embed(self, texts: List[str]) -> List[List[float]]:
+    # Task types measurably improve retrieval: documents and queries are
+    # embedded into the same space but optimized for their role.
+    # https://ai.google.dev/gemini-api/docs/embeddings#task-types
+    def _embed(self, texts: List[str], task_type: str) -> List[List[float]]:
         if not texts:
             return []
         out: List[List[float]] = []
         client = _client()
+        config = types.EmbedContentConfig(task_type=task_type)
         for i in range(0, len(texts), self._BATCH):
             batch = texts[i:i + self._BATCH]
-            resp = client.models.embed_content(model=self.model, contents=batch)
+            resp = client.models.embed_content(
+                model=self.model, contents=batch, config=config
+            )
             out.extend(e.values for e in resp.embeddings)
         return out
 
+    def embed(self, texts: List[str]) -> List[List[float]]:
+        return self._embed(texts, "RETRIEVAL_DOCUMENT")
+
     def embed_one(self, text: str) -> List[float]:
-        resp = _client().models.embed_content(model=self.model, contents=text)
-        return resp.embeddings[0].values
+        return self._embed([text], "RETRIEVAL_DOCUMENT")[0]
+
+    def embed_query(self, text: str) -> List[float]:
+        return self._embed([text], "RETRIEVAL_QUERY")[0]
