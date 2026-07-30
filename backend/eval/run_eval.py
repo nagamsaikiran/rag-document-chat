@@ -15,11 +15,15 @@ the system should refuse rather than answer from parametric memory.
 
 Usage:
     python -m eval.run_eval --questions eval/questions.json
+    # or self-contained (ingests fixtures first — used by CI):
+    python -m eval.run_eval --questions eval/questions.ci.json --ingest eval/fixtures
 """
 import argparse
 import json
+import os
 from statistics import mean
 
+from app.ingestion import SUPPORTED_EXTENSIONS, chunk_file
 from app.llm.factory import get_llm
 from app.rag import answer
 from app.vectorstore import get_store
@@ -44,9 +48,24 @@ def judge_faithfulness(question: str, ans: str, citations: list[dict]) -> int:
     return 0
 
 
-def run(path: str) -> None:
+def ingest_fixtures(folder: str) -> None:
+    """Index every supported file in a folder (fresh, deterministic corpus)."""
+    store = get_store()
+    store.clear("public")
+    for name in sorted(os.listdir(folder)):
+        if not name.lower().endswith(SUPPORTED_EXTENSIONS):
+            continue
+        chunks = chunk_file(os.path.join(folder, name), name)
+        added = store.add(chunks, "public")
+        print(f"ingested {name}: {added} chunks")
+
+
+def run(path: str, ingest: str | None = None) -> None:
     with open(path) as f:
         cases = json.load(f)
+
+    if ingest:
+        ingest_fixtures(ingest)
 
     if get_store().count() == 0:
         raise SystemExit(
@@ -105,5 +124,7 @@ def run(path: str) -> None:
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--questions", default="eval/questions.json")
+    ap.add_argument("--ingest", default=None,
+                    help="folder of fixture documents to index before evaluating")
     args = ap.parse_args()
-    run(args.questions)
+    run(args.questions, args.ingest)
