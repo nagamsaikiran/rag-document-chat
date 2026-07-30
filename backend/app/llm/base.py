@@ -31,8 +31,14 @@ class LLMProvider(ABC):
 class EmbeddingProvider(ABC):
     @abstractmethod
     def embed(self, texts: List[str]) -> List[List[float]]:
-        """Return one embedding vector per input text."""
+        """Return one embedding vector per input *document/chunk* text."""
 
     @abstractmethod
     def embed_one(self, text: str) -> List[float]:
         """Convenience for a single text."""
+
+    # Some providers (e.g. Gemini) produce better retrieval when queries and
+    # documents are embedded with different task hints. Providers that support
+    # this override embed_query; the default just reuses embed_one.
+    def embed_query(self, text: str) -> List[float]:
+        return self.embed_one(text)
