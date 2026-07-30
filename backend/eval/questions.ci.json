@@ -1,0 +1,22 @@
+[
+  {
+    "question": "How many vacation days do full-time employees get per year?",
+    "must_include": ["21"]
+  },
+  {
+    "question": "What laptop do employees get and how much RAM does it have?",
+    "must_include": ["falcon x14", "32"]
+  },
+  {
+    "question": "What is the security escalation code for lost devices?",
+    "must_include": ["ax-7741"]
+  },
+  {
+    "question": "What is the daily meal reimbursement limit during business travel?",
+    "must_include": ["65"]
+  },
+  {
+    "question": "What is the capital of France?",
+    "expected": "OUT_OF_SCOPE"
+  }
+]
