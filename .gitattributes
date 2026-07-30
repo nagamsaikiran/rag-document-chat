@@ -1,0 +1,17 @@
+# Normalize line endings so diffs stay clean across Windows/Linux/CI.
+# Text files are stored as LF in the repo and checked out as-is.
+* text=auto eol=lf
+
+# Windows helper scripts must keep CRLF to run correctly under cmd.exe.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary assets: never touch.
+*.png binary
+*.gif binary
+*.mp4 binary
+*.pdf binary
+*.docx binary
+*.xlsx binary
+*.bin binary
+*.sqlite3 binary
