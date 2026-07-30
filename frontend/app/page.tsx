@@ -71,7 +71,7 @@ export default function Home() {
   async function upload() {
     const files = fileRef.current?.files;
     if (!files || files.length === 0) {
-      setStatus({ msg: "Pick a PDF first.", ok: false });
+      setStatus({ msg: "Pick a file first (PDF, DOCX, TXT, MD, HTML).", ok: false });
       return;
     }
     setBusy(true);
@@ -111,6 +111,25 @@ export default function Home() {
     }
   }
 
+  async function deleteSource(name: string) {
+    if (busy) return;
+    if (!confirm(`Remove "${name}" from the index?`)) return;
+    setBusy(true);
+    try {
+      await fetch(`${API}/sources/delete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...sessionHeader() },
+        body: JSON.stringify({ source: name }),
+      });
+      setStatus({ msg: `Removed ${name}.`, ok: true });
+      await refresh();
+    } catch {
+      setStatus({ msg: "Could not reach the backend to delete.", ok: false });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function clearAll() {
     if (busy) return;
     if (!confirm("Remove all indexed documents?")) return;
@@ -132,6 +151,12 @@ export default function Home() {
     const q = input.trim();
     if (!q || busy) return;
     setInput("");
+    // Send recent turns so the backend can resolve follow-ups
+    // ("what about section 3?") into standalone retrieval queries.
+    const history = messages.slice(-12).map((m) => ({
+      role: m.role,
+      content: m.text.slice(0, 4000),
+    }));
     setMessages((m) => [...m, { role: "user", text: q }, { role: "assistant", text: "" }]);
     setBusy(true);
     track("question_asked", { length: q.length });
@@ -140,7 +165,7 @@ export default function Home() {
       const res = await fetch(`${API}/chat/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...sessionHeader() },
-        body: JSON.stringify({ question: q }),
+        body: JSON.stringify({ question: q, history }),
       });
       const reader = res.body!.getReader();
       const decoder = new TextDecoder();
@@ -154,7 +179,12 @@ export default function Home() {
         buffer = lines.pop() || "";
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
-          const evt = JSON.parse(line.slice(6));
+          let evt: any;
+          try {
+            evt = JSON.parse(line.slice(6));
+          } catch {
+            continue; // one malformed event shouldn't kill the whole stream
+          }
           if (evt.type === "token") {
             setMessages((m) => {
               const copy = [...m];
@@ -184,7 +214,7 @@ export default function Home() {
   return (
     <div className="wrap">
       <h1>DocChat RAG</h1>
-      <p className="sub">Upload PDFs and ask questions. Answers are grounded in your documents with citations.</p>
+      <p className="sub">Upload documents (PDF, DOCX, TXT, MD, HTML) and ask questions — follow-ups welcome. Answers are grounded in your documents with citations.</p>
 
       {backendUp === false && (
         <div className="banner err">
@@ -194,7 +224,7 @@ export default function Home() {
 
       <div className="card">
         <div className="row">
-          <input ref={fileRef} type="file" accept="application/pdf" multiple />
+          <input ref={fileRef} type="file" accept=".pdf,.docx,.txt,.md,.html,.htm" multiple />
           <button onClick={upload} disabled={busy}>Upload &amp; index</button>
           <span className="pill">{indexed} chunks indexed</span>
           {indexed > 0 && (
@@ -216,7 +246,22 @@ export default function Home() {
           </p>
         )}
         {sources.length > 0 && (
-          <p className="muted" style={{ marginTop: 10 }}>Sources: {sources.join(", ")}</p>
+          <div className="muted" style={{ marginTop: 10 }}>
+            Sources:{" "}
+            {sources.map((s) => (
+              <span key={s} className="src">
+                {s}
+                <button
+                  className="src-x"
+                  title={`Remove ${s}`}
+                  onClick={() => deleteSource(s)}
+                  disabled={busy}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
         )}
       </div>
 
