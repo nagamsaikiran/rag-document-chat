@@ -21,6 +21,22 @@ jobs:
       - run: pip install -r requirements.txt -r requirements-dev.txt
       - run: pytest
 
+  frontend-tests:
+    name: Frontend tests (Vitest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm test
+
   frontend-build:
     name: Frontend build
     runs-on: ubuntu-latest
@@ -31,8 +47,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
-      - run: npm install
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
       - run: npm run build
         env:
           NEXT_PUBLIC_API_URL: ""
@@ -50,4 +68,40 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install pip-audit
-      - run: pip-audit -r requirements.txt
+      # PYSEC-2026-311 (chromadb): pre-auth RCE in the *Chroma HTTP server*
+      # (/api/v2 collections endpoint). This app embeds Chroma via
+      # PersistentClient and never runs `chroma run`, so the vulnerable
+      # endpoint doesn't exist here. No fixed release yet; re-check on bumps.
+      - run: pip-audit -r requirements.txt --ignore-vuln PYSEC-2026-311
+
+  rag-eval:
+    # End-to-end RAG quality check with real LLM calls: ingests a fixture doc,
+    # asks questions, measures retrieval hit-rate / correctness / faithfulness.
+    # Runs only when the GEMINI_API_KEY repo secret is configured, and only on
+    # push (not fork PRs, which can't see secrets).
+    name: RAG eval (live, needs GEMINI_API_KEY secret)
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    continue-on-error: true  # quality signal, not a merge gate
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Run eval against fixtures
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          LLM_PROVIDER: gemini
+          EMBEDDING_PROVIDER: gemini
+          CHROMA_DIR: ./.chroma-ci
+        run: |
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "GEMINI_API_KEY secret not set — skipping live eval."
+            exit 0
+          fi
+          python -m eval.run_eval --questions eval/questions.ci.json --ingest eval/fixtures
