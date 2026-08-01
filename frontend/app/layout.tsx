@@ -44,6 +44,9 @@ button.ghost:hover { border-color: #ff8088; color: #ff8088; }
 .toggle input { width: 15px; height: 15px; cursor: pointer; }
 .pill { font-size: 12px; background: #1d2530; padding: 4px 9px; border-radius: 999px; color: #9aa0ab; }
 .banner { padding: 11px 14px; border-radius: 8px; margin-bottom: 16px; font-size: 14px; }
+.src { display: inline-flex; align-items: center; gap: 2px; background: #1d2530; border-radius: 999px; padding: 2px 4px 2px 10px; margin: 0 4px 4px 0; }
+.src-x { background: transparent; border: 0; color: #767d8a; font-size: 14px; font-weight: 600; cursor: pointer; padding: 0 6px; line-height: 1; }
+.src-x:hover { color: #ff8088; }
 .banner.err { background: #2a1518; border: 1px solid #5a2128; color: #ff9ba1; }
 `;
 
