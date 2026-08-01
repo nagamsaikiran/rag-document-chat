@@ -2,10 +2,12 @@
 
 [![CI](https://github.com/nagamsaikiran/rag-document-chat/actions/workflows/ci.yml/badge.svg)](https://github.com/nagamsaikiran/rag-document-chat/actions/workflows/ci.yml)
 
-A production-shaped Retrieval-Augmented Generation (RAG) application: upload PDFs,
-ask questions, and get answers that are **grounded in your documents**, **cited
-back to the exact source and page**, and **streamed token-by-token**. Ships with
-a **provider-agnostic LLM layer**, a **hallucination guardrail**, and an
+A production-shaped Retrieval-Augmented Generation (RAG) application: upload
+documents (PDF, DOCX, TXT, MD, HTML), ask questions — including follow-ups —
+and get answers that are **grounded in your documents**, **cited back to the
+exact source and page**, and **streamed token-by-token**. Ships with **hybrid
+retrieval (vector + BM25)**, **conversation memory with query rewriting**, a
+**provider-agnostic LLM layer**, a **hallucination guardrail**, and an
 **evaluation harness** that measures retrieval and answer quality with numbers.
 
 > Built to demonstrate full-stack AI engineering: a Python/FastAPI AI backend
@@ -65,22 +67,25 @@ These are the parts most demos skip — and the parts interviewers probe:
 | Decision | What I did | Why |
 |---|---|---|
 | **Provider abstraction** | LLM + embeddings sit behind ABCs (`app/llm/base.py`); **OpenAI and Google Gemini** both implemented, selectable via one env var. | Swap providers by adding one file — no change to RAG, API, or tests. Gemini's free tier means it runs at $0. |
+| **Hybrid retrieval** | Dense vector search fused with BM25 keyword scores via Reciprocal Rank Fusion. | Dense-only retrieval misses exact-match queries (IDs, names, part numbers); BM25 catches them. Gemini embeddings also use retrieval task types (`RETRIEVAL_DOCUMENT`/`RETRIEVAL_QUERY`). |
+| **Conversation memory** | Follow-up questions are rewritten into standalone queries (LLM condense step) before retrieval. | "What about section 3?" retrieves nothing on its own — multi-turn is where naive RAG demos fall over. |
+| **Honest citations** | After generation, only the `[n]` markers actually used in the answer are returned as citations. | Returning every retrieved chunk as a "citation" overstates evidence. |
 | **Multimodal ingestion** | Pages rendered with PyMuPDF and read by a vision model into Markdown — tables, charts, figures, and scanned text. | Plain text extraction misses everything that isn't a text layer. Vision captures the whole page. |
 | **Grounding guardrail** | If the best chunk's distance exceeds a threshold, the system refuses instead of answering. | Stops the classic RAG failure: answering from the model's memory when the docs don't contain the answer. |
 | **Citations** | Numbered context; the model must cite; the API returns source + page + snippet. | Every claim is auditable — the difference between a toy and something trustworthy. |
 | **Evaluation** | Harness scores retrieval hit-rate, answer correctness, and faithfulness (LLM-as-judge), incl. negative tests. | You can't improve what you don't measure — the strongest seniority signal in the repo. |
-| **Security** | `pip-audit` (0 CVEs), upload size/page caps, configurable CORS, secrets kept out of git. | Shows production awareness. See [SECURITY.md](SECURITY.md). |
+| **Security** | Streamed uploads with pre-buffer size checks, session validation + TTL expiry, rate limiting, quota caps, prompt-injection hardening, non-root container, generic errors with request ids, `pip-audit` (0 CVEs). | Shows production awareness. See [SECURITY.md](SECURITY.md) and [docs/AUDIT-2026-07-09.md](docs/AUDIT-2026-07-09.md). |
 
 ---
 
 ## Tech stack
 
-- **Backend:** Python, FastAPI, Pydantic, pypdf, PyMuPDF, ChromaDB
-- **LLM/Embeddings:** OpenAI (`gpt-4o-mini`) or Google Gemini (`gemini-2.5-flash`, free tier) behind a swappable interface
+- **Backend:** Python, FastAPI, Pydantic, pypdf, PyMuPDF, python-docx, ChromaDB
+- **Retrieval:** hybrid — Chroma dense vectors (cosine) + BM25 (`rank-bm25`) fused with RRF
+- **LLM/Embeddings:** OpenAI (`gpt-4o-mini`) or Google Gemini (`gemini-2.5-flash`, free tier) behind a swappable interface; Gemini embeddings use retrieval task types
 - **Multimodal:** vision model reads tables, charts, figures, and scanned pages (PyMuPDF render → vision transcription)
 - **Frontend:** Next.js (App Router), React, TypeScript
-- **Vector store:** Chroma (persistent, cosine space)
-- **Security:** dependency audit (pip-audit, 0 CVEs), upload size/page limits, configurable CORS — see [SECURITY.md](SECURITY.md)
+- **Security:** dependency audit (pip-audit, 0 CVEs), streamed uploads + size/page/quota caps, session TTL, rate limiting, hardened prompts, non-root container — see [SECURITY.md](SECURITY.md)
 
 ---
 
@@ -157,9 +162,56 @@ guessing — that's the grounding guardrail in action:
 ## Configuration & tuning
 
 All knobs live in `backend/.env` (typed in `app/config.py`): chunk size/overlap,
-`TOP_K`, and `RELEVANCE_DISTANCE_THRESHOLD` (the guardrail sensitivity). Use the
-eval harness to sweep these and pick values that maximize retrieval hit-rate
-without letting the guardrail leak.
+`TOP_K`, `HYBRID_SEARCH`, and `RELEVANCE_DISTANCE_THRESHOLD` (the guardrail
+sensitivity). Distances are **not comparable across embedding models**, so when
+the threshold is unset a per-provider default applies (openai 0.55, gemini
+0.60). Use the eval harness to sweep these and pick values that maximize
+retrieval hit-rate without letting the guardrail leak:
+
+```bash
+cd backend
+python -m eval.run_eval --questions eval/questions.ci.json --ingest eval/fixtures
+```
+
+The same eval runs in CI on every push (add a `GEMINI_API_KEY` repo secret to
+enable it), so retrieval quality regressions show up in the badge, not in prod.
+
+---
+
+## Testing
+
+Every push runs four CI jobs: backend tests, frontend tests, a dependency
+audit, and the live RAG eval.
+
+**Backend — pytest (36 tests, no network needed):**
+
+```bash
+cd backend
+pip install -r requirements.txt -r requirements-dev.txt
+pytest
+```
+
+Covers chunking (recursive split, header/footer stripping, page limits), the
+multi-format loaders, vector-store session isolation + per-source delete + TTL
+expiry + hybrid keyword retrieval, the RAG core (grounding guardrail, citation
+filtering, history clipping, query-rewrite fallback, injection hardening), and
+the API security guards (session validation, upload caps, body-size limits,
+security headers) via FastAPI's TestClient.
+
+**Frontend — Vitest + Testing Library (7 tests, mocked network):**
+
+```bash
+cd frontend
+npm install
+npm test
+```
+
+Covers upload validation, SSE stream parsing (including malformed events),
+citation rendering, per-source delete, the session-id contract with the
+backend, and that conversation history is sent with follow-ups.
+
+**End-to-end quality — the eval harness** (above) exercises the real pipeline
+with live LLM calls against a fixture corpus.
 
 ---
 
@@ -167,10 +219,11 @@ without letting the guardrail leak.
 
 Being explicit about tradeoffs is part of the point:
 
-- **Multimodal ingestion** — when `MULTIMODAL` is on, pages are rendered and read by a vision model, so tables, charts, figures, and scanned PDFs are captured (one vision call per page; toggle off for fast text-only mode).
-- **No auth/multi-tenant** — fine for a single-user demo, not for prod. Would add per-user namespaces and authentication (see [SECURITY.md](SECURITY.md)).
+- **No auth** — sessions isolate visitors (validated ids, TTL expiry) but aren't credentials. Prod would add real authentication and per-user namespaces (see [SECURITY.md](SECURITY.md)).
+- **Prompt injection is mitigated, not solved** — context is delimited and declared untrusted, but no prompt-level defense is complete against a crafted document.
 - **LLM-as-judge is approximate** — good for relative comparison, not ground truth; a human-labeled set would be stronger.
-- **No reranking** — adding a cross-encoder reranker after vector retrieval would likely lift precision.
+- **BM25 is per-session, in-process** — perfect at visitor scale; a large shared corpus would want a real sparse index (e.g. Elasticsearch) and a cross-encoder reranker after fusion.
+- **Synchronous ingestion** — vision mode on large PDFs can hit host request timeouts; a background job queue with progress events is the production shape.
 - **Agentic upgrade** — let the model decide *when* to retrieve and add a second tool (web search) to make this an agentic RAG system.
 
 ---
@@ -182,16 +235,18 @@ backend/
   app/
     config.py            # typed settings from .env
     main.py              # FastAPI: /upload /chat /chat/stream /sources /health
-    ingestion.py         # PDF load + recursive chunking
-    vectorstore.py       # Chroma wrapper (we own the embeddings)
-    rag.py               # retrieve → ground → cite → (stream)
+    ingestion.py         # PDF/DOCX/TXT/MD/HTML load + recursive chunking
+    vectorstore.py       # Chroma wrapper + hybrid retrieval (BM25 + RRF)
+    rag.py               # rewrite → retrieve → ground → cite → (stream)
     llm/
       base.py            # provider-agnostic ABCs
       openai_provider.py # OpenAI implementation
+      gemini_provider.py # Gemini implementation (retrieval task types)
       factory.py         # config → concrete provider
   eval/
     run_eval.py          # retrieval / correctness / faithfulness metrics
     questions.example.json
+    fixtures/            # synthetic corpus for the CI eval
 frontend/
   app/
     page.tsx             # upload + streaming chat + citations
