@@ -34,9 +34,10 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from app import summaries
 from app.config import get_settings
 from app.ingestion import SUPPORTED_EXTENSIONS, chunk_file
-from app.rag import answer, answer_stream
+from app.rag import answer, answer_stream, summarize_document
 from app.vectorstore import get_store
 
 logging.basicConfig(
@@ -64,14 +65,35 @@ def readable_error(e: Exception) -> str:
     return f"{type(cause).__name__} {code}: {msg}" if code else f"{type(cause).__name__}: {msg}"
 
 
+def friendly_error(e: Exception) -> str | None:
+    """Map expected, user-facing conditions (quota, bad key) to a plain message.
+
+    These aren't bugs — the raw provider stack trace would only confuse a user —
+    so we return a clean sentence regardless of DEBUG_ERRORS. Returns None for
+    everything else (which then falls through to the normal handling)."""
+    t = readable_error(e).lower()
+    if any(s in t for s in ("429", "quota", "resource_exhausted", "rate limit", "rate-limit")):
+        return ("All available AI providers are at their free-tier limit right now. "
+                "Please wait a minute and try again.")
+    if any(s in t for s in ("api key", "api_key", "unauthenticated", "permission_denied",
+                            " 401", " 403")):
+        return ("The AI service rejected the request — the API key may be missing, invalid, "
+                "or lacking access. Check GEMINI_API_KEY.")
+    return None
+
+
 def safe_error(e: Exception, request_id: str, context: str) -> str:
     """Log the full exception server-side; return a client-safe message.
 
-    With DEBUG_ERRORS=true (local dev) the real cause is included, because
-    'invalid API key' beats 'something went wrong' when you're setting up.
-    Deployed containers set DEBUG_ERRORS=false and clients only get the ref id.
+    Known user-facing conditions (rate limit, bad key) get a friendly sentence.
+    Otherwise: with DEBUG_ERRORS=true (local dev) the real cause is included
+    ('invalid API key' beats 'something went wrong' when setting up); deployed
+    containers set DEBUG_ERRORS=false and clients only get the ref id.
     """
     logger.exception("[%s] error during %s", request_id, context)
+    friendly = friendly_error(e)
+    if friendly:
+        return friendly
     if get_settings().debug_errors:
         return f"{readable_error(e)} (ref: {request_id})"
     return f"Something went wrong while {context}. Please try again. (ref: {request_id})"
@@ -208,6 +230,9 @@ class HistoryMessage(BaseModel):
 class ChatRequest(BaseModel):
     question: str = Field(min_length=1, max_length=4000)
     history: list[HistoryMessage] = Field(default_factory=list, max_length=24)
+    # Whether to generate follow-up suggestions (an extra LLM call). The UI lets
+    # visitors turn this off to conserve free-tier quota.
+    suggest: bool = True
 
 
 class DeleteSourceRequest(BaseModel):
@@ -244,6 +269,7 @@ def delete_source(req: DeleteSourceRequest,
                   session_id: str = Header(default="public", alias="X-Session-Id")):
     sid = valid_session(session_id)
     get_store().delete_source(sid, req.source)
+    summaries.delete_source(sid, req.source)
     return {
         "status": "deleted",
         "source": req.source,
@@ -255,6 +281,7 @@ def delete_source(req: DeleteSourceRequest,
 def clear(session_id: str = Header(default="public", alias="X-Session-Id")):
     sid = valid_session(session_id)
     get_store().clear(sid)
+    summaries.clear(sid)
     return {"status": "cleared", "indexed_chunks": get_store().count(sid)}
 
 
@@ -340,6 +367,16 @@ async def upload(
                 })
                 continue
             added = store.add(chunks, sid)
+            # Summarize the whole document once, so later "what is this about?"
+            # questions are answered from a complete summary rather than a few
+            # retrieved chunks. Best-effort: never fail the upload over this.
+            if settings.enable_doc_summary:
+                try:
+                    doc_summary = summarize_document([c.text for c in chunks])
+                    if doc_summary:
+                        summaries.set_summary(sid, name, doc_summary)
+                except Exception:
+                    logger.exception("[%s] summary generation failed for %s", rid, name)
             summary.append({"file": name, "chunks_indexed": added})
         except ValueError as e:
             # Our own guards (page limit, unsupported type): always safe to show.
@@ -375,7 +412,7 @@ def chat_stream(req: ChatRequest, request: Request,
 
     def event_gen():
         try:
-            for event in answer_stream(req.question, sid, history):
+            for event in answer_stream(req.question, sid, history, include_suggestions=req.suggest):
                 yield f"data: {json.dumps(event)}\n\n"
         except Exception as e:
             err = {"type": "token",

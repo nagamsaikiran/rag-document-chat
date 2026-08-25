@@ -15,6 +15,14 @@ class Settings(BaseSettings):
     llm_provider: str = "openai"
     embedding_provider: str = "openai"
 
+    # Failover chain for ANSWER GENERATION (comma-separated, first = primary).
+    # When >1 provider is listed, one that hits its rate/quota limit falls
+    # through to the next automatically. Example: "gemini,groq,cerebras,mistral".
+    # Empty = just use `llm_provider`. Embeddings are NOT affected by this —
+    # they always use `embedding_provider` (vectors aren't portable across
+    # models, so the embedder must stay fixed).
+    llm_providers: str = ""
+
     # OpenAI
     openai_api_key: str = ""
     openai_chat_model: str = "gpt-4o-mini"
@@ -24,6 +32,20 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_chat_model: str = "gemini-2.5-flash"
     gemini_embedding_model: str = "gemini-embedding-001"
+
+    # Free-tier failover providers (all OpenAI-compatible; chat/answers only, no
+    # embeddings). Add a key to enable one, and list it in LLM_PROVIDERS. Model
+    # names change often on free tiers — override via env if one stops working.
+    # Groq (free, fast; https://console.groq.com/keys). Free model IDs rotate —
+    # check https://console.groq.com/docs/models if one 404s, then override here.
+    groq_api_key: str = ""
+    groq_chat_model: str = "openai/gpt-oss-20b"
+    # Cerebras (free, fast; https://cloud.cerebras.ai)
+    cerebras_api_key: str = ""
+    cerebras_chat_model: str = "gpt-oss-120b"
+    # Mistral La Plateforme (free tier; https://console.mistral.ai)
+    mistral_api_key: str = ""
+    mistral_chat_model: str = "mistral-small-latest"
 
     # Multimodal ingestion: render each PDF page to an image and have a vision
     # model transcribe it (reads tables, charts, figures, scanned text). Slower
@@ -56,7 +78,7 @@ class Settings(BaseSettings):
     # Retrieval / chunking
     chunk_size: int = 1000
     chunk_overlap: int = 150
-    top_k: int = 4
+    top_k: int = 6
     # Hybrid retrieval: fuse vector similarity with BM25 keyword scores (RRF).
     # Dense-only misses exact keywords (IDs, names, numbers); BM25 catches them.
     hybrid_search: bool = True
@@ -69,6 +91,17 @@ class Settings(BaseSettings):
     # Conversation memory: how many previous turns to use for follow-up
     # question rewriting and answer context.
     max_history_turns: int = 6
+
+    # Feature flags (each adds one extra LLM call; turn off to save quota).
+    # Summarize every document at upload so whole-document questions ("what is
+    # this about?") are answered from a complete summary, not just top-k chunks.
+    enable_doc_summary: bool = True
+    # After each answer, propose follow-up questions (tagged in-document vs
+    # general) shown as clickable chips in the UI.
+    enable_suggestions: bool = True
+    # Max citations to show under an answer (only the ones the model actually
+    # cited are kept; this caps how many of those appear).
+    max_citations: int = 4
 
     chroma_dir: str = "./.chroma"
 

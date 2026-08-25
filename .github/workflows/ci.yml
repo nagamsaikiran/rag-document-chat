@@ -68,11 +68,18 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install pip-audit
-      # PYSEC-2026-311 (chromadb): pre-auth RCE in the *Chroma HTTP server*
-      # (/api/v2 collections endpoint). This app embeds Chroma via
-      # PersistentClient and never runs `chroma run`, so the vulnerable
-      # endpoint doesn't exist here. No fixed release yet; re-check on bumps.
-      - run: pip-audit -r requirements.txt --ignore-vuln PYSEC-2026-311
+      # chromadb server-side CVEs: PYSEC-2026-311 (pre-auth RCE on the Chroma
+      # HTTP server's /api/v2 collections endpoint) plus CVE-2026-45830 /
+      # -45831 / -45833. This app embeds Chroma via PersistentClient and never
+      # runs `chroma run`, so the vulnerable HTTP server isn't started here.
+      # No fixed chromadb release exists yet — re-check and drop these on the
+      # next chromadb bump. (pypdf CVEs are fixed by the 6.16.2 pin, not ignored.)
+      - run: >-
+          pip-audit -r requirements.txt
+          --ignore-vuln PYSEC-2026-311
+          --ignore-vuln CVE-2026-45830
+          --ignore-vuln CVE-2026-45831
+          --ignore-vuln CVE-2026-45833
 
   rag-eval:
     # End-to-end RAG quality check with real LLM calls: ingests a fixture doc,
