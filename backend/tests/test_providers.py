@@ -3,12 +3,13 @@ import pytest
 
 import app.main as main
 from app.llm.base import LLMProvider
-from app.llm.factory import _EMBEDDERS, _LLMS
+from app.llm.factory import _EMBEDDERS, _OPENAI_COMPAT
 
 
 def test_providers_registered():
-    assert {"gemini", "openai"} <= set(_LLMS)
     assert {"gemini", "openai"} <= set(_EMBEDDERS)
+    # OpenAI-compatible free-tier chat providers for the failover chain.
+    assert {"groq", "cerebras", "mistral"} <= set(_OPENAI_COMPAT)
 
 
 def test_transcribe_image_default_raises():

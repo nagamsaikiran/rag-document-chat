@@ -40,7 +40,19 @@ function sessionHeader(): Record<string, string> {
 }
 
 type Citation = { marker: number; source: string; page: number; snippet: string };
-type Message = { role: "user" | "assistant"; text: string; citations?: Citation[] };
+type Suggestion = { question: string; scope: "in_document" | "general" };
+type Message = {
+  role: "user" | "assistant";
+  text: string;
+  citations?: Citation[];
+  suggestions?: Suggestion[];
+};
+
+// Where "general" follow-ups (beyond the uploaded document) are sent. Google AI
+// Mode gives an AI-style answer for questions the document can't cover.
+function webSearchUrl(q: string): string {
+  return "https://www.google.com/search?udm=50&q=" + encodeURIComponent(q);
+}
 
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -49,6 +61,10 @@ export default function Home() {
   const [indexed, setIndexed] = useState(0);
   const [sources, setSources] = useState<string[]>([]);
   const [vision, setVision] = useState(false);
+  // Ask the backend to propose follow-up questions after each answer. On by
+  // default; turning it off skips one LLM call per question (saves free-tier
+  // quota). Preference is remembered per browser.
+  const [suggest, setSuggest] = useState(true);
   const [status, setStatus] = useState<{ msg: string; ok: boolean } | null>(null);
   const [backendUp, setBackendUp] = useState<boolean | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -66,6 +82,12 @@ export default function Home() {
   }
   useEffect(() => {
     refresh();
+    // Load the saved follow-up preference (in an effect, so server and first
+    // client render match and there's no hydration mismatch).
+    try {
+      const v = localStorage.getItem("docchat_suggest");
+      if (v !== null) setSuggest(v === "1");
+    } catch {}
   }, []);
 
   async function upload() {
@@ -147,10 +169,24 @@ export default function Home() {
     }
   }
 
-  async function ask() {
-    const q = input.trim();
+  // Clicking a follow-up chip: in-document questions go to our RAG app;
+  // "general" ones open Google AI Mode in a new tab (the app only knows the
+  // uploaded document, so it can't answer those).
+  function followUp(s: Suggestion) {
+    if (busy) return;
+    if (s.scope === "general") {
+      track("followup_web", { question: s.question });
+      window.open(webSearchUrl(s.question), "_blank", "noopener,noreferrer");
+      return;
+    }
+    track("followup_document", { question: s.question });
+    ask(s.question);
+  }
+
+  async function ask(preset?: string) {
+    const q = (preset ?? input).trim();
     if (!q || busy) return;
-    setInput("");
+    if (preset === undefined) setInput("");
     // Send recent turns so the backend can resolve follow-ups
     // ("what about section 3?") into standalone retrieval queries.
     const history = messages.slice(-12).map((m) => ({
@@ -165,7 +201,7 @@ export default function Home() {
       const res = await fetch(`${API}/chat/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...sessionHeader() },
-        body: JSON.stringify({ question: q, history }),
+        body: JSON.stringify({ question: q, history, suggest }),
       });
       const reader = res.body!.getReader();
       const decoder = new TextDecoder();
@@ -185,115 +221,242 @@ export default function Home() {
           } catch {
             continue; // one malformed event shouldn't kill the whole stream
           }
+          // Immutable updates only: never mutate an existing message object.
+          // React Strict Mode (next dev) invokes updaters twice to surface impure
+          // code — a mutating `text += ...` would double every streamed chunk.
           if (evt.type === "token") {
-            setMessages((m) => {
-              const copy = [...m];
-              copy[copy.length - 1].text += evt.data;
-              return copy;
-            });
+            const delta = evt.data as string;
+            setMessages((m) =>
+              m.map((msg, idx) =>
+                idx === m.length - 1 ? { ...msg, text: msg.text + delta } : msg
+              )
+            );
           } else if (evt.type === "citations") {
-            setMessages((m) => {
-              const copy = [...m];
-              copy[copy.length - 1].citations = evt.data;
-              return copy;
-            });
+            const cites = evt.data as Citation[];
+            setMessages((m) =>
+              m.map((msg, idx) =>
+                idx === m.length - 1 ? { ...msg, citations: cites } : msg
+              )
+            );
+          } else if (evt.type === "suggestions") {
+            const sugg = evt.data as Suggestion[];
+            setMessages((m) =>
+              m.map((msg, idx) =>
+                idx === m.length - 1 ? { ...msg, suggestions: sugg } : msg
+              )
+            );
           }
         }
       }
     } catch {
-      setMessages((m) => {
-        const copy = [...m];
-        copy[copy.length - 1].text = "Error reaching the backend. Is it running on " + API + "?";
-        return copy;
-      });
+      const errText = "Error reaching the backend. Is it running on " + API + "?";
+      setMessages((m) =>
+        m.map((msg, idx) => (idx === m.length - 1 ? { ...msg, text: errText } : msg))
+      );
     } finally {
       setBusy(false);
     }
   }
 
+  const githubUrl = "https://github.com/nagamsaikiran/rag-document-chat";
+  const linkedinUrl = "https://www.linkedin.com/in/saikirannagam";
+  const GithubIcon = (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.5 11.5 0 0 1 12 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222 0 1.606-.014 2.898-.014 3.293 0 .322.216.694.825.576C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12" />
+    </svg>
+  );
+  const LinkedinIcon = (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
+    </svg>
+  );
+
   return (
-    <div className="wrap">
-      <h1>DocChat RAG</h1>
-      <p className="sub">Upload documents (PDF, DOCX, TXT, MD, HTML) and ask questions — follow-ups welcome. Answers are grounded in your documents with citations.</p>
-
-      {backendUp === false && (
-        <div className="banner err">
-          Backend not reachable at {API}. Start it with 2-start-backend.bat and refresh.
-        </div>
-      )}
-
-      <div className="card">
-        <div className="row">
-          <input ref={fileRef} type="file" accept=".pdf,.docx,.txt,.md,.html,.htm" multiple />
-          <button onClick={upload} disabled={busy}>Upload &amp; index</button>
-          <span className="pill">{indexed} chunks indexed</span>
-          {indexed > 0 && (
-            <button onClick={clearAll} disabled={busy} className="ghost">Clear all</button>
-          )}
-        </div>
-        <label className="toggle" title="Reads tables, charts, and figures with a vision model. Slower and uses more quota.">
-          <input
-            type="checkbox"
-            checked={vision}
-            onChange={(e) => setVision(e.target.checked)}
-            disabled={busy}
-          />
-          Read tables &amp; images
-        </label>
-        {status && (
-          <p className={status.ok ? "muted" : "err-text"} style={{ marginTop: 10 }}>
-            {status.msg}
-          </p>
-        )}
-        {sources.length > 0 && (
-          <div className="muted" style={{ marginTop: 10 }}>
-            Sources:{" "}
-            {sources.map((s) => (
-              <span key={s} className="src">
-                {s}
-                <button
-                  className="src-x"
-                  title={`Remove ${s}`}
-                  onClick={() => deleteSource(s)}
-                  disabled={busy}
-                >
-                  ×
-                </button>
-              </span>
-            ))}
+    <div className="shell">
+      <aside className="sidebar">
+        <div className="brand">
+          <span className="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M13.5 3.75H7.25A1.75 1.75 0 0 0 5.5 5.5v13A1.75 1.75 0 0 0 7.25 20.25h9.5A1.75 1.75 0 0 0 18.5 18.5V8.75z" />
+              <path d="M13.25 3.75V9h5" />
+              <path d="M8.75 13h6.5M8.75 16h4" />
+            </svg>
+          </span>
+          <div>
+            <h1>DocChat RAG</h1>
+            <div className="tag">Grounded doc Q&amp;A</div>
           </div>
-        )}
-      </div>
+        </div>
 
-      <div className="card">
-        {messages.length === 0 && <p className="muted">Ask something about your uploaded documents…</p>}
-        {messages.map((m, i) => (
-          <div key={i} className={`msg ${m.role}`}>
-            <div className="label">{m.role}</div>
-            <div>{m.text || (busy && i === messages.length - 1 ? "…" : "")}</div>
-            {m.citations && m.citations.length > 0 && (
-              <div className="cites">
-                {m.citations.map((c) => (
-                  <div key={c.marker} className="cite">
-                    [{c.marker}] {c.source} — p.{c.page}
-                    <div className="muted">{c.snippet}…</div>
-                  </div>
+        <div className="hiwrap">
+          <div className="s-title">How it works</div>
+          <div className="hiw">
+            <div className="hiw-item"><span className="d" /><span>Answers grounded in your files, with citations</span></div>
+            <div className="hiw-item"><span className="d" /><span>Follow-up suggestions after each answer</span></div>
+            <div className="hiw-item"><span className="d" /><span>Private to your browser session</span></div>
+          </div>
+        </div>
+
+        <nav className="social">
+          <a href={githubUrl} target="_blank" rel="noopener noreferrer" title="View source on GitHub">
+            {GithubIcon}GitHub
+          </a>
+          <a href={linkedinUrl} target="_blank" rel="noopener noreferrer" title="LinkedIn profile">
+            {LinkedinIcon}LinkedIn
+          </a>
+        </nav>
+
+        <nav className="m-social" aria-label="Links">
+          <a href={githubUrl} target="_blank" rel="noopener noreferrer" title="View source on GitHub" aria-label="View source on GitHub">
+            {GithubIcon}
+          </a>
+          <a href={linkedinUrl} target="_blank" rel="noopener noreferrer" title="LinkedIn profile" aria-label="LinkedIn profile">
+            {LinkedinIcon}
+          </a>
+        </nav>
+      </aside>
+
+      <div className="main">
+        <div className="toolbar">
+          <div className="tb-row">
+            <input ref={fileRef} type="file" accept=".pdf,.docx,.txt,.md,.html,.htm" multiple />
+            <button onClick={upload} disabled={busy}>Upload &amp; index</button>
+            <span className="pill">{indexed} chunks indexed</span>
+            {indexed > 0 && (
+              <button onClick={clearAll} disabled={busy} className="ghost" style={{ marginLeft: "auto" }}>
+                Clear all
+              </button>
+            )}
+          </div>
+          <div className="tb-opts">
+            <label className="toggle" title="Reads tables, charts, and figures with a vision model. Slower and uses more quota.">
+              <input
+                type="checkbox"
+                checked={vision}
+                onChange={(e) => setVision(e.target.checked)}
+                disabled={busy}
+              />
+              Read tables &amp; images
+            </label>
+            <label className="toggle" title="Turns off the extra AI call that proposes follow-up questions after each answer.">
+              <input
+                type="checkbox"
+                checked={suggest}
+                onChange={(e) => {
+                  setSuggest(e.target.checked);
+                  try {
+                    localStorage.setItem("docchat_suggest", e.target.checked ? "1" : "0");
+                  } catch {}
+                }}
+                disabled={busy}
+              />
+              Suggest follow-up questions
+            </label>
+            {sources.length > 0 && (
+              <div className="tb-sources">
+                <span>Sources:</span>
+                {sources.map((s) => (
+                  <span key={s} className="src">
+                    {s}
+                    <button
+                      className="src-x"
+                      title={`Remove ${s}`}
+                      onClick={() => deleteSource(s)}
+                      disabled={busy}
+                    >
+                      ×
+                    </button>
+                  </span>
                 ))}
               </div>
             )}
           </div>
-        ))}
-      </div>
+          {status && (
+            <p className={`status-msg ${status.ok ? "ok" : "bad"}`}>{status.msg}</p>
+          )}
+        </div>
 
-      <div className="row">
-        <input
-          type="text"
-          value={input}
-          placeholder="Ask a question…"
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && ask()}
-        />
-        <button onClick={ask} disabled={busy}>Ask</button>
+        {backendUp === false && (
+          <div className="banner err">
+            Backend not reachable at {API}. Start it with 2-start-backend.bat and refresh.
+          </div>
+        )}
+
+        <div className="content">
+          <div className="thread">
+            {messages.length === 0 && (
+              <p className="empty">Ask something about your uploaded documents…</p>
+            )}
+            {messages.map((m, i) => {
+              const isLast = i === messages.length - 1;
+              const streaming = busy && isLast && m.role === "assistant";
+              return (
+                <div key={i} className={`msg ${m.role}`}>
+                  <div className="avatar" aria-hidden="true">{m.role === "user" ? "You" : "AI"}</div>
+                  <div className="bubble">
+                    <div className="label">{m.role === "user" ? "You" : "Assistant"}</div>
+                    {m.text ? (
+                      <div className={streaming ? "answer streaming" : "answer"}>{m.text}</div>
+                    ) : streaming ? (
+                      <div className="typing" aria-label="Thinking"><span></span><span></span><span></span></div>
+                    ) : (
+                      <div className="answer"></div>
+                    )}
+                    {m.citations && m.citations.length > 0 && (
+                      <details className="cites">
+                        <summary>
+                          {m.citations.length} source{m.citations.length > 1 ? "s" : ""} · click to view
+                        </summary>
+                        {m.citations.map((c) => (
+                          <div key={c.marker} className="cite">
+                            <span className="cite-head">[{c.marker}] {c.source} — p.{c.page}</span>
+                            <div className="muted">{c.snippet}</div>
+                          </div>
+                        ))}
+                      </details>
+                    )}
+                    {m.suggestions && m.suggestions.length > 0 && (
+                      <div className="followups">
+                        <div className="fu-label">Follow-up</div>
+                        <div className="fu-chips">
+                          {m.suggestions.map((s, j) => (
+                            <button
+                              key={j}
+                              className={`chip ${s.scope}`}
+                              onClick={() => followUp(s)}
+                              disabled={busy}
+                              title={
+                                s.scope === "general"
+                                  ? "Beyond this document — opens Google AI Mode in a new tab"
+                                  : "Answered from your document"
+                              }
+                            >
+                              {s.question}
+                              {s.scope === "general" ? " ↗" : ""}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="foot">
+          <div className="composer">
+            <input
+              type="text"
+              value={input}
+              placeholder="Ask a question…"
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && ask()}
+            />
+            <button onClick={() => ask()} disabled={busy}>Ask</button>
+          </div>
+        </div>
       </div>
     </div>
   );
