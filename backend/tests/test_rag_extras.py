@@ -45,7 +45,9 @@ def test_stream_filters_citations_from_full_text(monkeypatch):
     monkeypatch.setattr(rag, "get_store", lambda: _Store())
     monkeypatch.setattr(rag, "get_llm", lambda: _LLM("Streamed [2] only."))
     events = list(rag.answer_stream("q"))
-    cites = events[-1]
+    # Citations are no longer the final event (a suggestions event now follows),
+    # so locate the citations event by type instead of assuming it is last.
+    cites = next(e for e in events if e["type"] == "citations")
     assert cites["type"] == "citations"
     assert [c["marker"] for c in cites["data"]] == [2]
 
