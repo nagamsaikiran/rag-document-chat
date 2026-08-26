@@ -50,6 +50,48 @@ REWRITE_SYSTEM = (
 )
 
 NO_ANSWER = "I couldn't find anything relevant to that in the uploaded documents."
+# Distinct from NO_ANSWER: shown when the session has no indexed documents at
+# all, so retrieval was never meaningful (e.g. the very first message before any
+# upload). Keeps us from implying documents exist and from suggesting follow-ups
+# about "the document" when there is none.
+NO_DOCS = "No documents uploaded yet — add a PDF, DOCX, TXT, MD, or HTML file above, then ask a question about it."
+
+# Greetings, small talk, and "what can you do" are NOT document questions.
+# Running retrieval on them wrongly returns "I couldn't find that in the
+# documents"; instead we recognise them and answer helpfully about the app.
+_SMALLTALK_RE = re.compile(
+    r"^(?:"
+    r"hi|hey|hello|heya|hiya|yo|howdy|sup|hi there|hello there|"
+    r"good\s?(?:morning|afternoon|evening|day)|"
+    r"how\s?are\s?you(?:\s?doing)?|how'?s\s?it\s?going|hows?\s?it\s?going|"
+    r"how\s?do\s?you\s?do|what'?s\s?up|whats\s?up|wassup|"
+    r"who\s?are\s?you|what\s?are\s?you|what\s?is\s?this|what'?s\s?this|"
+    r"what\s?(?:can|do)\s?you\s?do|what\s?can\s?you\s?help(?:\s?me)?(?:\s?with)?|"
+    r"(?:can\s?you\s?)?help(?:\s?me)?|how\s?can\s?you\s?help(?:\s?me)?|"
+    r"what\s?should\s?i\s?(?:do|ask)|"
+    r"thanks|thank\s?you|thankyou|thx|ty|cheers|"
+    r"bye|goodbye|see\s?(?:ya|you)|cya"
+    r")$"
+)
+
+
+def _is_smalltalk(question: str) -> bool:
+    """True for greetings / meta questions that aren't about the documents."""
+    q = re.sub(r"[!?.,]+$", "", (question or "").strip().lower()).strip()
+    q = re.sub(r"\s+", " ", q)
+    return bool(_SMALLTALK_RE.match(q))
+
+
+def _help_reply(session_id: str) -> str:
+    """Friendly response for greetings / 'what can you do' — adapts to whether
+    the visitor has uploaded anything yet."""
+    if get_store().count(session_id) > 0:
+        return ("Hi! I'm DocChat — I answer questions grounded in the documents "
+                "you've uploaded, with citations from the text. Go ahead and ask "
+                "me anything about them.")
+    return ("Hi! I'm DocChat — I answer questions about documents you upload, "
+            "with citations from the text. Upload a PDF, DOCX, TXT, MD, or HTML "
+            "file above, then ask me anything about it.")
 
 _MARKER_RE = re.compile(r"\[(\d{1,2})\]")
 
@@ -408,6 +450,14 @@ def answer(question: str, session_id: str = "public",
     """Non-streaming answer (used by the eval harness and /chat)."""
     history = _clip_history(history)
 
+    # Greeting / "what can you do" -> helpful reply, not a document search.
+    if _is_smalltalk(question):
+        return {"answer": _help_reply(session_id), "citations": [], "grounded": True}
+
+    # Nothing indexed yet -> clear "upload first" message, no false citations.
+    if get_store().count(session_id) == 0:
+        return {"answer": NO_DOCS, "citations": [], "grounded": False}
+
     # Whole-document questions are answered from the stored summary so nothing
     # important is missed; specific questions use chunk retrieval as before.
     ov_context, ov_citations = _overview_context(question, session_id)
@@ -452,6 +502,22 @@ def answer_stream(question: str, session_id: str = "public",
 
     def _sugg(text: str, ctx: str) -> List[dict]:
         return suggest_followups(question, text, ctx) if include_suggestions else []
+
+    # Greeting / "what can you do": answer helpfully, skip retrieval and the
+    # follow-up chips (which would reference a document that may not be there).
+    if _is_smalltalk(question):
+        yield {"type": "token", "data": _help_reply(session_id)}
+        yield {"type": "citations", "data": []}
+        yield {"type": "suggestions", "data": []}
+        return
+
+    # Nothing indexed yet: don't run retrieval or suggest follow-ups about a
+    # document that doesn't exist. Emit a clear "upload something first" message.
+    if get_store().count(session_id) == 0:
+        yield {"type": "token", "data": NO_DOCS}
+        yield {"type": "citations", "data": []}
+        yield {"type": "suggestions", "data": []}
+        return
 
     # Whole-document question -> answer from the stored summary.
     ov_context, ov_citations = _overview_context(question, session_id)
