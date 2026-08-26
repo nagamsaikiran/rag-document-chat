@@ -3,12 +3,59 @@ import app.rag as rag
 
 
 class _Store:
+    def count(self, session_id="public"):
+        return 3  # non-empty: exercise retrieval, not the "no docs" guard
+
     def query(self, q, session_id="public", top_k=None):
         return [
             {"text": "first chunk", "source": "a.pdf", "page": 1, "distance": 0.1},
             {"text": "second chunk", "source": "a.pdf", "page": 2, "distance": 0.2},
             {"text": "third chunk", "source": "b.pdf", "page": 5, "distance": 0.3},
         ]
+
+
+class _EmptyStore:
+    def count(self, session_id="public"):
+        return 0
+
+    def query(self, q, session_id="public", top_k=None):
+        raise AssertionError("query() should not be called when the index is empty")
+
+
+def test_empty_index_says_upload_first_and_no_suggestions(monkeypatch):
+    monkeypatch.setattr(rag, "get_store", lambda: _EmptyStore())
+    # A real (non-greeting) question with nothing indexed -> "upload first".
+    events = list(rag.answer_stream("what is the revenue?"))
+    kinds = [e["type"] for e in events]
+    assert kinds == ["token", "citations", "suggestions"]
+    assert events[0]["data"] == rag.NO_DOCS
+    assert events[1]["data"] == []
+    assert events[2]["data"] == []  # no follow-ups about a document that doesn't exist
+
+
+class _NoQueryStore:
+    """Non-empty index whose query() must never be called (smalltalk path)."""
+    def count(self, session_id="public"):
+        return 5
+
+    def query(self, q, session_id="public", top_k=None):
+        raise AssertionError("retrieval should be skipped for small talk")
+
+
+def test_smalltalk_gets_help_reply_not_document_search(monkeypatch):
+    monkeypatch.setattr(rag, "get_store", lambda: _NoQueryStore())
+    for q in ["hi", "how are you?", "what can you do", "who are you?", "thanks"]:
+        events = list(rag.answer_stream(q))
+        assert events[0]["type"] == "token"
+        assert "DocChat" in events[0]["data"]          # helpful reply, not NO_ANSWER
+        assert events[0]["data"] != rag.NO_ANSWER
+        assert events[-1] == {"type": "suggestions", "data": []}
+
+
+def test_real_question_is_not_treated_as_smalltalk():
+    assert rag._is_smalltalk("hi") is True
+    assert rag._is_smalltalk("what is this about?") is False
+    assert rag._is_smalltalk("what does the document say about pricing?") is False
 
 
 class _LLM:
