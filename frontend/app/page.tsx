@@ -385,7 +385,7 @@ export default function Home() {
         <div className="content">
           <div className="thread">
             {messages.length === 0 && (
-              <p className="empty">Ask something about your uploaded documents…</p>
+              <p className="empty">Upload a document, then ask a question about it — answers come with citations from your files.</p>
             )}
             {messages.map((m, i) => {
               const isLast = i === messages.length - 1;
