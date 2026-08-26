@@ -114,8 +114,10 @@ body{
 
 /* the only scrollable region */
 .content{ flex:1 1 auto; min-height:0; overflow-y:auto; padding:24px 22px; }
+/* when there are no messages yet, center the placeholder in the open space */
+.content:has(.empty){ display:flex; align-items:center; justify-content:center; }
 .thread{ width:100%; max-width:720px; margin:0 auto; }
-.empty{ color:var(--muted); font-size:14px; padding:8px 0; }
+.empty{ color:var(--muted); font-size:15px; text-align:center; max-width:38ch; margin:0 auto; padding:24px 16px; line-height:1.55; }
 
 .foot{ flex:none; padding:16px 22px 20px; display:flex; justify-content:center; background:var(--bg); border-top:1px solid var(--line); }
 .composer{

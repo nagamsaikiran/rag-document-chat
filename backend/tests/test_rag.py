@@ -6,6 +6,9 @@ class _Store:
     def __init__(self, distance):
         self._d = distance
 
+    def count(self, session_id="public"):
+        return 1  # non-empty: exercise the retrieval path, not the "no docs" guard
+
     def query(self, q, session_id="public", top_k=None):
         return [{"text": "the answer text", "source": "f.pdf", "page": 2, "distance": self._d}]
 
