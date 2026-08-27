@@ -80,6 +80,8 @@ body{
 .hiw-item .d{ width:6px; height:6px; border-radius:50%; background:var(--accent); margin-top:6px; flex:none; }
 
 .social{ margin-top:auto; border-top:1px solid var(--line); padding-top:16px; display:flex; flex-direction:column; gap:8px; }
+.social .s-title{ margin-bottom:2px; }
+.about-text{ font-size:12px; color:var(--muted); line-height:1.5; margin:0 0 6px; }
 .social a{
   display:inline-flex; align-items:center; gap:9px; font-size:13px; font-weight:600; color:var(--ink-soft);
   border:1px solid var(--line-strong); border-radius:9px; padding:9px 12px; text-decoration:none;
@@ -110,10 +112,11 @@ body{
 .tb-row{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
 .tb-opts{ display:flex; gap:20px; align-items:center; flex-wrap:wrap; font-size:13px; color:var(--muted); }
 .tb-opts .toggle{ margin:0; }
-.tb-sources{ display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
+.tb-sources{ display:flex; align-items:center; gap:7px; flex-wrap:wrap; max-width:100%; min-width:0; }
+.tb-sources .src{ max-width:100%; overflow-wrap:anywhere; }
 
 /* the only scrollable region */
-.content{ flex:1 1 auto; min-height:0; overflow-y:auto; padding:24px 22px; }
+.content{ flex:1 1 auto; min-height:0; overflow-y:auto; overflow-x:hidden; padding:24px 22px; }
 /* when there are no messages yet, center the placeholder in the open space */
 .content:has(.empty){ display:flex; align-items:center; justify-content:center; }
 .thread{ width:100%; max-width:720px; margin:0 auto; }
@@ -194,7 +197,7 @@ button.ghost:hover{ background:var(--surface); color:var(--accent); border-color
 .bubble{ flex:1; min-width:0; }
 .label{ font-size:11px; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); font-weight:700; margin-bottom:5px; }
 .msg.assistant .label{ color:var(--accent); }
-.answer{ margin:0; color:var(--ink-soft); font-size:15px; line-height:1.65; white-space:pre-wrap; overflow-wrap:break-word; }
+.answer{ margin:0; color:var(--ink-soft); font-size:15px; line-height:1.65; white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word; max-width:100%; }
 .msg.user .answer{ color:var(--ink); font-weight:600; font-size:16px; }
 
 .answer.streaming::after{
@@ -225,6 +228,7 @@ button.ghost:hover{ background:var(--surface); color:var(--accent); border-color
   padding:11px 14px; border:1px solid var(--line); border-left:3px solid var(--accent);
   background:var(--surface-2); border-radius:0 8px 8px 0; margin:8px 0;
 }
+.cite{ overflow-wrap:anywhere; }
 .cite-head{ font-size:12.5px; color:var(--accent-ink); font-weight:700; }
 .muted{ color:var(--muted); font-size:13px; }
 .cite .muted{ margin-top:4px; line-height:1.5; }
@@ -252,6 +256,7 @@ button.ghost:hover{ background:var(--surface); color:var(--accent); border-color
 /* backend-down banner */
 .banner{ margin:14px 22px 0; padding:12px 15px; border-radius:10px; font-size:14px; box-shadow:var(--sh-sm); }
 .banner.err{ background:#fbeeec; border:1px solid #eecac5; color:#8c352c; }
+.banner.warn{ background:#fdf6e3; border:1px solid #ecdca6; color:#7a5b12; }
 
 /* ---- responsive: collapse to a single column ---- */
 @media (max-width:820px){
@@ -270,6 +275,19 @@ button.ghost:hover{ background:var(--surface); color:var(--accent); border-color
   .toolbar{ padding:12px 15px; }
   .content{ padding:16px 15px; }
   .foot{ padding:12px 15px 16px; }
+
+  /* smooth condense/expand of the top bar as the chat scrolls */
+  .sidebar, .toolbar{ transition:padding .2s ease; }
+  .brand-mark{ transition:width .2s ease, height .2s ease; }
+  .brand h1{ transition:font-size .2s ease; }
+  /* .shell.compact is toggled from JS once the conversation is scrolled down:
+     shrink the header and hide the options row to free space for the chat. */
+  .shell.compact .sidebar{ padding-top:6px; padding-bottom:6px; }
+  .shell.compact .brand-mark{ width:30px; height:30px; }
+  .shell.compact .brand-mark svg{ width:18px; height:18px; }
+  .shell.compact .brand h1{ font-size:15px; }
+  .shell.compact .toolbar{ padding-top:8px; padding-bottom:8px; }
+  .shell.compact .tb-opts{ display:none; }
 }
 @media (min-width:821px){ .m-social{ display:none; } }
 
