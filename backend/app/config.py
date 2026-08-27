@@ -103,6 +103,16 @@ class Settings(BaseSettings):
     # cited are kept; this caps how many of those appear).
     max_citations: int = 4
 
+    # Whole-document answering: when a session's total indexed text is at or
+    # below full_context_max_chars, send the ENTIRE document to the model
+    # instead of only the top-k retrieved chunks. This fixes "how many / list
+    # all / count" questions that top-k retrieval gets wrong by only seeing a
+    # few chunks. Larger documents fall back to retrieval automatically.
+    # ~30k chars ≈ 7–8k tokens: comfortably within every provider's context,
+    # and covers resumes, contracts, and most single reports.
+    enable_full_context: bool = True
+    full_context_max_chars: int = 30000
+
     chroma_dir: str = "./.chroma"
 
 

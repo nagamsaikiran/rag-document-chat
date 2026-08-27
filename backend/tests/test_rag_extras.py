@@ -58,6 +58,76 @@ def test_real_question_is_not_treated_as_smalltalk():
     assert rag._is_smalltalk("what does the document say about pricing?") is False
 
 
+class _FullStore:
+    """Small session: exposes all_chunks so the whole-document path is used, and
+    fails if retrieval (query) is attempted instead."""
+    def count(self, session_id="public"):
+        return 3
+
+    def all_chunks(self, session_id="public"):
+        return [
+            {"id": "r::1", "text": "Company A — Role X.", "source": "r.docx", "page": 1},
+            {"id": "r::2", "text": "Company B — Role Y.", "source": "r.docx", "page": 1},
+            {"id": "r::3", "text": "Company C — Role Z.", "source": "r.docx", "page": 1},
+        ]
+
+    def query(self, q, session_id="public", top_k=None):
+        raise AssertionError("small docs should use the whole-document path, not top-k")
+
+
+def test_small_document_uses_whole_document_context(monkeypatch):
+    store = _FullStore()
+    llm = _LLM("Three companies: A, B, and C [1].")
+    monkeypatch.setattr(rag, "get_store", lambda: store)
+    monkeypatch.setattr(rag, "get_llm", lambda: llm)
+    events = list(rag.answer_stream("how many companies did he work in?"))
+    assert [e["type"] for e in events][-2:] == ["citations", "suggestions"]
+    # The model must have received EVERY company, not a retrieved subset.
+    user_prompt = llm.calls[0][1]
+    assert "Company A" in user_prompt
+    assert "Company B" in user_prompt
+    assert "Company C" in user_prompt
+
+
+class _RoutingStore:
+    """Records which path was taken: whole-document (all_chunks) vs retrieval
+    (query). Used to prove specific questions stay on cheap retrieval."""
+    def __init__(self):
+        self.used = []
+
+    def count(self, session_id="public"):
+        return 2
+
+    def all_chunks(self, session_id="public"):
+        self.used.append("all_chunks")
+        return [
+            {"id": "r::1", "text": "Company A — Role X.", "source": "r.docx", "page": 1},
+            {"id": "r::2", "text": "Company B — Role Y.", "source": "r.docx", "page": 1},
+        ]
+
+    def query(self, q, session_id="public", top_k=None):
+        self.used.append("query")
+        return [{"text": "Company A — Role X.", "source": "r.docx", "page": 1, "distance": 0.1}]
+
+
+def test_specific_question_uses_cheap_retrieval(monkeypatch):
+    store = _RoutingStore()
+    monkeypatch.setattr(rag, "get_store", lambda: store)
+    monkeypatch.setattr(rag, "get_llm", lambda: _LLM("It mentions Company A [1]."))
+    list(rag.answer_stream("what does it say about Company A?"))
+    assert "query" in store.used            # went through retrieval
+    assert "all_chunks" not in store.used   # did NOT send the whole document
+
+
+def test_aggregate_question_uses_whole_document(monkeypatch):
+    store = _RoutingStore()
+    monkeypatch.setattr(rag, "get_store", lambda: store)
+    monkeypatch.setattr(rag, "get_llm", lambda: _LLM("Two companies: A and B [1]."))
+    list(rag.answer_stream("how many companies did he work in?"))
+    assert "all_chunks" in store.used       # sent the whole document
+    assert "query" not in store.used        # did NOT fall back to retrieval
+
+
 class _LLM:
     def __init__(self, reply="Blue is the answer [1][3]."):
         self.reply = reply
