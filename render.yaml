@@ -10,10 +10,19 @@ services:
     envVars:
       - key: GEMINI_API_KEY
         sync: false          # set this secret in the Render dashboard
+      - key: EMBEDDING_PROVIDER
+        value: gemini        # embeddings stay pinned (vectors aren't portable)
+      # Answer-generation failover chain: if one provider hits its rate/quota
+      # limit, the next takes over automatically. LLM_PROVIDER is the single
+      # fallback used only when LLM_PROVIDERS (plural) is unset.
       - key: LLM_PROVIDER
         value: gemini
-      - key: EMBEDDING_PROVIDER
-        value: gemini
+      - key: LLM_PROVIDERS
+        value: gemini,groq,mistral
+      - key: GROQ_API_KEY
+        sync: false          # set this secret in the Render dashboard
+      - key: MISTRAL_API_KEY
+        sync: false          # set this secret in the Render dashboard
       - key: MULTIMODAL
         value: "false"       # vision is opt-in per upload (saves quota)
       - key: RATE_LIMIT_PER_MIN

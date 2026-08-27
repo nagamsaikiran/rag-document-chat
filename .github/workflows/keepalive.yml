@@ -1,0 +1,25 @@
+name: Keep Render awake
+
+# Pings the live app so Render's free instance doesn't spin down (it sleeps
+# after 15 min without inbound traffic, which wipes the in-memory index).
+# This runs even when nobody has a browser tab open.
+#
+# Caveats to know:
+#  - GitHub cron is best-effort; runs can be delayed several minutes under load.
+#  - Scheduled workflows are auto-disabled after 60 days of no repo activity —
+#    push anything (or re-enable in the Actions tab) to keep it running.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"   # every 10 minutes
+  workflow_dispatch:          # lets you trigger it manually from the Actions tab
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping /health
+        run: |
+          curl -fsS --max-time 30 https://docchat.saikirannagam.com/health \
+            && echo "pinged OK" \
+            || echo "ping failed (app may be cold-starting) — not failing the job"
