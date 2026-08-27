@@ -196,6 +196,25 @@ class VectorStore:
         metas = res["metadatas"] or []
         return sorted({m["source"] for m in metas})
 
+    def all_chunks(self, session_id: str) -> List[dict]:
+        """Every chunk for a session, in document order (source, page, id). Used
+        by the "whole-document" answer path when the content is small enough to
+        fit the model's context, so retrieval never has to guess which pieces
+        matter (fixes counting / listing questions that top-k retrieval misses)."""
+        res = self._collection.get(
+            where={"session_id": session_id}, include=["documents", "metadatas"]
+        )
+        ids = res.get("ids") or []
+        docs = res.get("documents") or []
+        metas = res.get("metadatas") or []
+        items = [
+            {"id": i, "text": d, "source": (m or {}).get("source", ""),
+             "page": (m or {}).get("page", 1)}
+            for i, d, m in zip(ids, docs, metas)
+        ]
+        items.sort(key=lambda x: (x["source"] or "", x["page"] or 0, x["id"]))
+        return items
+
 
 _store: VectorStore | None = None
 

@@ -173,6 +173,31 @@ def _is_overview(question: str) -> bool:
     return any(p in q for p in _OVERVIEW_PHRASES)
 
 
+# Aggregate / global questions ("how many companies?", "list all sections",
+# "count the projects") need to see the WHOLE document, not the few chunks
+# top-k retrieval returns. Detecting them lets us send the full doc (or the
+# precomputed summary for large docs) ONLY for these, and keep every other
+# question on cheap retrieval — the token-efficiency win.
+_AGGREGATE_RE = re.compile(
+    r"\b(how many|how much|number of|count(?:\s+(?:of|the|all))?|"
+    r"total\s+(?:number|count)|list\s+(?:all|every|them|the|out)|"
+    r"name\s+(?:all|every|them)|all\s+(?:the|of the)\b|every\s+\w+|"
+    r"how\s+many\s+times)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_aggregate(question: str) -> bool:
+    return bool(_AGGREGATE_RE.search(question or ""))
+
+
+def _wants_full_coverage(question: str) -> bool:
+    """True when a question needs the whole document (overview or aggregate).
+    Only these take the more expensive whole-document / summary path; specific
+    lookups stay on cheap top-k retrieval regardless of document size."""
+    return _is_overview(question) or _is_aggregate(question)
+
+
 def summarize_document(texts: List[str]) -> str:
     """Map-reduce summary of a document's chunk texts. One LLM call when the text
     is small; otherwise summarize batches then summarize the summaries. Best
@@ -445,6 +470,39 @@ def _overview_context(question: str, session_id: str) -> Tuple[str | None, List[
     return _summary_context(session_id)
 
 
+def _full_document_context(session_id: str) -> Tuple[str | None, List[dict]]:
+    """When the whole session fits the model's context, return (context, citations)
+    built from EVERY chunk (grouped by source) — so the model sees the complete
+    document and counting / listing questions ("how many companies?") are answered
+    from all of it, not the handful of chunks top-k retrieval happened to pick.
+
+    Returns (None, []) — so the caller falls back to retrieval — when the feature
+    is off, nothing is indexed, the store can't enumerate chunks, or the content
+    is larger than full_context_max_chars (too big to send whole)."""
+    settings = get_settings()
+    if not settings.enable_full_context:
+        return None, []
+    getter = getattr(get_store(), "all_chunks", None)
+    if getter is None:  # store doesn't support enumeration (e.g. a test stub)
+        return None, []
+    items = getter(session_id)
+    if not items:
+        return None, []
+    total = sum(len(i.get("text") or "") for i in items)
+    if total > settings.full_context_max_chars:
+        return None, []
+    by_source: dict[str, List[str]] = {}
+    for it in items:
+        by_source.setdefault(it.get("source") or "document", []).append(it.get("text") or "")
+    blocks, citations = [], []
+    for i, (src, texts) in enumerate(by_source.items(), start=1):
+        text = "\n".join(t for t in texts if t)
+        blocks.append(f"[{i}] (full document: {src})\n{text}")
+        citations.append({"marker": i, "source": src, "page": 1,
+                          "snippet": _clean_snippet(text)})
+    return "<context>\n" + "\n\n".join(blocks) + "\n</context>", citations
+
+
 def answer(question: str, session_id: str = "public",
            history: List[dict] | None = None) -> dict:
     """Non-streaming answer (used by the eval harness and /chat)."""
@@ -458,14 +516,18 @@ def answer(question: str, session_id: str = "public",
     if get_store().count(session_id) == 0:
         return {"answer": NO_DOCS, "citations": [], "grounded": False}
 
-    # Whole-document questions are answered from the stored summary so nothing
-    # important is missed; specific questions use chunk retrieval as before.
-    ov_context, ov_citations = _overview_context(question, session_id)
-    if ov_context is not None:
-        text = get_llm().complete(SYSTEM_PROMPT, _build_user_prompt(question, ov_context, history))
-        return {"answer": text,
-                "citations": _citations_payload_pass(ov_citations, text),
-                "grounded": True}
+    # Aggregate / overview questions need full coverage -> whole document if it
+    # fits (small docs), else the precomputed summary (large docs). Every other
+    # question falls through to cheap top-k retrieval below.
+    if _wants_full_coverage(question):
+        ctx, cites = _full_document_context(session_id)
+        if ctx is None and get_settings().enable_doc_summary:
+            ctx, cites = _summary_context(session_id)
+        if ctx is not None:
+            text = get_llm().complete(SYSTEM_PROMPT, _build_user_prompt(question, ctx, history))
+            return {"answer": text,
+                    "citations": _citations_payload_pass(cites, text),
+                    "grounded": True}
 
     query = _rewrite_question(question, history)
     hits, grounded = _retrieve(query, session_id)
@@ -519,19 +581,25 @@ def answer_stream(question: str, session_id: str = "public",
         yield {"type": "suggestions", "data": []}
         return
 
-    # Whole-document question -> answer from the stored summary.
-    ov_context, ov_citations = _overview_context(question, session_id)
-    if ov_context is not None:
-        full: List[str] = []
-        for delta in _stream_deltas(
-            get_llm().stream(SYSTEM_PROMPT, _build_user_prompt(question, ov_context, history))
-        ):
-            full.append(delta)
-            yield {"type": "token", "data": delta}
-        text = "".join(full)
-        yield {"type": "citations", "data": _citations_payload_pass(ov_citations, text)}
-        yield {"type": "suggestions", "data": _sugg(text, ov_context)}
-        return
+    # Aggregate / overview questions need full coverage -> whole document if it
+    # fits (small docs), else the precomputed summary (large docs). Every other
+    # question falls through to cheap top-k retrieval below, so we only pay for
+    # the bigger context on the questions that actually require it.
+    if _wants_full_coverage(question):
+        ctx, cites = _full_document_context(session_id)
+        if ctx is None and get_settings().enable_doc_summary:
+            ctx, cites = _summary_context(session_id)
+        if ctx is not None:
+            full: List[str] = []
+            for delta in _stream_deltas(
+                get_llm().stream(SYSTEM_PROMPT, _build_user_prompt(question, ctx, history))
+            ):
+                full.append(delta)
+                yield {"type": "token", "data": delta}
+            text = "".join(full)
+            yield {"type": "citations", "data": _citations_payload_pass(cites, text)}
+            yield {"type": "suggestions", "data": _sugg(text, ctx)}
+            return
 
     query = _rewrite_question(question, history)
     hits, grounded = _retrieve(query, session_id)

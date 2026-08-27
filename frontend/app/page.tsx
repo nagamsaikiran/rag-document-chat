@@ -18,6 +18,13 @@ function resolveApiBase(): string {
 }
 const API = resolveApiBase();
 
+// Chat history is cached in the browser so a refresh keeps the conversation.
+// It is deliberately short-lived: discarded after CHAT_TTL_MS, or as soon as the
+// server no longer has the document (so we never show stale Q&A for a doc that
+// has expired / been wiped). Keeps the convenience without long-term staleness.
+const CHAT_KEY = "docchat_history";
+const CHAT_TTL_MS = 24 * 60 * 60 * 1000; // 1 day
+
 // Fire a Google Analytics event if GA is loaded (no-op otherwise).
 function track(event: string, params: Record<string, unknown> = {}) {
   (window as any).gtag?.("event", event, params);
@@ -67,28 +74,104 @@ export default function Home() {
   const [suggest, setSuggest] = useState(true);
   const [status, setStatus] = useState<{ msg: string; ok: boolean } | null>(null);
   const [backendUp, setBackendUp] = useState<boolean | null>(null);
+  // True once we detect the server has lost this session's documents (free
+  // hosting spins down when idle and wipes the index). Drives a re-upload notice.
+  const [sessionReset, setSessionReset] = useState(false);
+  // Mobile only: once the conversation is scrolled down a bit, condense the top
+  // bar/toolbar to give the chat more room. Ignored by the desktop layout.
+  const [compact, setCompact] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  // Last scroll position of the conversation, to detect scroll direction for
+  // the mobile shrink-on-scroll top bar.
+  const lastScrollYRef = useRef(0);
+  // Last indexed count we saw, so we can tell "server was reset" (had docs, now
+  // zero) apart from "never uploaded" (always zero).
+  const prevIndexedRef = useRef(0);
+  // Gate for the chat-save effect: don't persist (or clear) until the initial
+  // load has decided whether to restore, so an empty first render never wipes
+  // saved history.
+  const initedRef = useRef(false);
 
   async function refresh() {
     try {
       const h = await fetch(`${API}/health`, { headers: sessionHeader() }).then((r) => r.json());
-      setIndexed(h.indexed_chunks ?? 0);
+      const now = h.indexed_chunks ?? 0;
+      setIndexed(now);
       setBackendUp(true);
+      // Had documents a moment ago, server now reports none -> it was wiped.
+      if (prevIndexedRef.current > 0 && now === 0) setSessionReset(true);
+      if (now > 0) setSessionReset(false);
+      prevIndexedRef.current = now;
       const s = await fetch(`${API}/sources`, { headers: sessionHeader() }).then((r) => r.json());
       setSources(s.sources ?? []);
+      return now;
     } catch {
       setBackendUp(false);
+      return null;
     }
   }
   useEffect(() => {
-    refresh();
-    // Load the saved follow-up preference (in an effect, so server and first
-    // client render match and there's no hydration mismatch).
+    // Load order matters: first find out whether the server still has the
+    // document, THEN decide whether to restore the saved chat. Restoring blindly
+    // (and clearing later) races and can leave orphaned history on screen.
+    (async () => {
+      const indexedNow = await refresh(); // number when reachable, null when not
+      try {
+        const raw = localStorage.getItem(CHAT_KEY);
+        if (raw) {
+          const saved = JSON.parse(raw);
+          const fresh = saved?.savedAt && Date.now() - saved.savedAt < CHAT_TTL_MS;
+          const valid = fresh && Array.isArray(saved.messages) && saved.messages.length;
+          if (valid && indexedNow && indexedNow > 0) {
+            setMessages(saved.messages);            // document still there -> restore
+          } else if (!valid || indexedNow === 0) {
+            localStorage.removeItem(CHAT_KEY);       // stale, or the document is gone
+          }
+          // indexedNow === null (backend unreachable): keep storage, restore
+          // nothing this load; a later successful load will decide.
+        }
+      } catch {}
+      initedRef.current = true; // saving/clearing is allowed from here on
+    })();
+
+    // Load the saved follow-up preference.
     try {
       const v = localStorage.getItem("docchat_suggest");
       if (v !== null) setSuggest(v === "1");
     } catch {}
+    // Re-sync the indexed count + sources whenever the tab regains focus. On
+    // hosts with ephemeral storage (e.g. a free dyno that sleeps), a restart
+    // clears this session's documents; without this the UI would keep showing
+    // a stale "N chunks indexed" from a much earlier visit.
+    const resync = () => {
+      if (!document.hidden) refresh();
+    };
+    window.addEventListener("focus", resync);
+    document.addEventListener("visibilitychange", resync);
+    // Keep-alive: ping the backend every 10 minutes so Render's free instance
+    // (which sleeps after 15 min of no traffic, wiping the index) stays awake
+    // while a tab is open. Cheap /health hit; ignores failures during cold start.
+    const beat = setInterval(() => {
+      fetch(`${API}/health`, { headers: sessionHeader() }).catch(() => {});
+    }, 10 * 60 * 1000);
+    return () => {
+      window.removeEventListener("focus", resync);
+      document.removeEventListener("visibilitychange", resync);
+      clearInterval(beat);
+    };
   }, []);
+
+  // Persist the conversation after each completed exchange (never mid-stream).
+  // Only writes; clearing is done explicitly (Clear all / doc-gone) so an empty
+  // first render can't wipe saved history before the initial load decides.
+  useEffect(() => {
+    if (!initedRef.current || busy) return;
+    try {
+      if (messages.length) {
+        localStorage.setItem(CHAT_KEY, JSON.stringify({ savedAt: Date.now(), messages }));
+      }
+    } catch {}
+  }, [messages, busy]);
 
   async function upload() {
     const files = fileRef.current?.files;
@@ -160,6 +243,7 @@ export default function Home() {
     try {
       await fetch(`${API}/clear`, { method: "POST", headers: sessionHeader() });
       setMessages([]);
+      try { localStorage.removeItem(CHAT_KEY); } catch {}
       setStatus({ msg: "Cleared. Upload a PDF to start fresh.", ok: true });
       await refresh();
     } catch {
@@ -255,6 +339,10 @@ export default function Home() {
       );
     } finally {
       setBusy(false);
+      // Re-sync indexed count + sources after every question, so if the server
+      // lost this session's documents (restart / ephemeral storage) the toolbar
+      // reflects the true state instead of a stale count.
+      refresh();
     }
   }
 
@@ -272,7 +360,7 @@ export default function Home() {
   );
 
   return (
-    <div className="shell">
+    <div className={`shell${compact ? " compact" : ""}`}>
       <aside className="sidebar">
         <div className="brand">
           <span className="brand-mark" aria-hidden="true">
@@ -297,14 +385,18 @@ export default function Home() {
           </div>
         </div>
 
-        <nav className="social">
+        <div className="social">
+          <div className="s-title">About</div>
+          <p className="about-text">
+            Curious how it works, or want to connect?
+          </p>
           <a href={githubUrl} target="_blank" rel="noopener noreferrer" title="View source on GitHub">
             {GithubIcon}GitHub
           </a>
           <a href={linkedinUrl} target="_blank" rel="noopener noreferrer" title="LinkedIn profile">
             {LinkedinIcon}LinkedIn
           </a>
-        </nav>
+        </div>
 
         <nav className="m-social" aria-label="Links">
           <a href={githubUrl} target="_blank" rel="noopener noreferrer" title="View source on GitHub" aria-label="View source on GitHub">
@@ -382,10 +474,30 @@ export default function Home() {
           </div>
         )}
 
-        <div className="content">
+        {sessionReset && (
+          <div className="banner warn">
+            Your session has reset — please re-upload your document to continue.
+          </div>
+        )}
+
+        <div
+          className="content"
+          onScroll={(e) => {
+            // Mobile-only effect (CSS gates it): direction-based. Scrolling DOWN
+            // condenses the top bar; scrolling UP (any amount) expands it again,
+            // wherever you are in the chat. Always full-size at the very top.
+            // The 6px delta ignores sub-pixel jitter so it doesn't flicker.
+            const y = (e.target as HTMLElement).scrollTop;
+            const last = lastScrollYRef.current;
+            if (y <= 8) setCompact(false);
+            else if (y > last + 6) setCompact(true);
+            else if (y < last - 6) setCompact(false);
+            lastScrollYRef.current = y;
+          }}
+        >
           <div className="thread">
             {messages.length === 0 && (
-              <p className="empty">Upload a document, then ask a question about it — answers come with citations from your files.</p>
+              <p className="empty">Upload a document, then ask a question about it - answers come with citations from your files.</p>
             )}
             {messages.map((m, i) => {
               const isLast = i === messages.length - 1;
