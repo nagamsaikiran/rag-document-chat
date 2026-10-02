@@ -1,10 +1,59 @@
+import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Script from "next/script";
 import { Hanken_Grotesk } from "next/font/google";
 
-export const metadata = {
-  title: "DocChat RAG",
-  description: "Chat with your documents — grounded answers with citations.",
+const siteUrl = "https://docchat.saikirannagam.com";
+const siteDescription =
+  "Upload documents and ask questions with grounded answers, source citations, and follow-up suggestions.";
+
+export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
+  title: {
+    default: "DocChat RAG",
+    template: "%s | DocChat RAG",
+  },
+  description: siteDescription,
+  applicationName: "DocChat RAG",
+  authors: [{ name: "Sai Kiran Nagam", url: "https://www.linkedin.com/in/saikirannagam" }],
+  creator: "Sai Kiran Nagam",
+  publisher: "Sai Kiran Nagam",
+  keywords: [
+    "DocChat",
+    "RAG",
+    "document chat",
+    "document assistant",
+    "PDF Q&A",
+    "citations",
+    "retrieval augmented generation",
+  ],
+  alternates: {
+    canonical: "/",
+  },
+  openGraph: {
+    title: "DocChat RAG",
+    description: siteDescription,
+    url: "/",
+    siteName: "DocChat RAG",
+    type: "website",
+    locale: "en_US",
+  },
+  twitter: {
+    card: "summary",
+    title: "DocChat RAG",
+    description: siteDescription,
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-snippet": -1,
+      "max-image-preview": "large",
+      "max-video-preview": -1,
+    },
+  },
 };
 
 // Self-hosted via next/font (served from our own origin at build time), so it
@@ -16,7 +65,7 @@ const sans = Hanken_Grotesk({
   display: "swap",
 });
 
-// Google Analytics 4 — loads only in production builds. A GA Measurement ID
+// Google Analytics 4: loads only in production builds. A GA Measurement ID
 // isn't secret, so hardcoding is fine.
 const GA_ID =
   process.env.NODE_ENV === "production"
@@ -27,7 +76,7 @@ const GA_ID =
 // Next.js `output: "export"`, React's stylesheet-precedence management drops an
 // external <link> during hydration. A plain inline <style> survives hydration.
 //
-// Design: "Clean & professional" — a two-column app shell. A left sidebar holds
+// Design: "Clean & professional" - a two-column app shell. A left sidebar holds
 // the brand, a short "how it works", and GitHub/LinkedIn links; the main column
 // has a top toolbar (upload + options), the conversation, and a docked
 // composer. One calm steel-blue accent on a neutral cool-grey system, hairline
