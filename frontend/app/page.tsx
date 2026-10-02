@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 // Resolve the backend base URL at runtime (in the browser), so it's correct
-// whether running locally or deployed — no reliance on build-time env vars:
+// whether running locally or deployed - no reliance on build-time env vars:
 //   - explicit NEXT_PUBLIC_API_URL wins if set to a real value
 //   - on localhost (dev) -> the separate backend on :8000
 //   - anywhere else (deployed) -> same origin as the served frontend ("")
@@ -48,10 +48,9 @@ type Message = {
   suggestions?: Suggestion[];
 };
 
-// Where "general" follow-ups (beyond the uploaded document) are sent. Google AI
-// Mode gives an AI-style answer for questions the document can't cover.
+// Where "general" follow-ups (beyond the uploaded document) are sent.
 function webSearchUrl(q: string): string {
-  return "https://www.google.com/search?udm=50&q=" + encodeURIComponent(q);
+  return "https://www.google.com/search?q=" + encodeURIComponent(q);
 }
 
 export default function Home() {
@@ -170,7 +169,7 @@ export default function Home() {
   }
 
   // Clicking a follow-up chip: in-document questions go to our RAG app;
-  // "general" ones open Google AI Mode in a new tab (the app only knows the
+  // "general" ones open Google search in a new tab (the app only knows the
   // uploaded document, so it can't answer those).
   function followUp(s: Suggestion) {
     if (busy) return;
@@ -223,7 +222,7 @@ export default function Home() {
           }
           // Immutable updates only: never mutate an existing message object.
           // React Strict Mode (next dev) invokes updaters twice to surface impure
-          // code — a mutating `text += ...` would double every streamed chunk.
+          // code; a mutating `text += ...` would double every streamed chunk.
           if (evt.type === "token") {
             const delta = evt.data as string;
             setMessages((m) =>
@@ -338,7 +337,7 @@ export default function Home() {
               />
               Read tables &amp; images
             </label>
-            <label className="toggle" title="Turns off the extra AI call that proposes follow-up questions after each answer.">
+            <label className="toggle" title="Turns off the extra model call that proposes follow-up questions after each answer.">
               <input
                 type="checkbox"
                 checked={suggest}
@@ -385,14 +384,14 @@ export default function Home() {
         <div className="content">
           <div className="thread">
             {messages.length === 0 && (
-              <p className="empty">Upload a document, then ask a question about it — answers come with citations from your files.</p>
+              <p className="empty">Upload a document, then ask a question about it - answers come with citations from your files.</p>
             )}
             {messages.map((m, i) => {
               const isLast = i === messages.length - 1;
               const streaming = busy && isLast && m.role === "assistant";
               return (
                 <div key={i} className={`msg ${m.role}`}>
-                  <div className="avatar" aria-hidden="true">{m.role === "user" ? "You" : "AI"}</div>
+                  <div className="avatar" aria-hidden="true">{m.role === "user" ? "You" : "Doc"}</div>
                   <div className="bubble">
                     <div className="label">{m.role === "user" ? "You" : "Assistant"}</div>
                     {m.text ? (
@@ -409,7 +408,7 @@ export default function Home() {
                         </summary>
                         {m.citations.map((c) => (
                           <div key={c.marker} className="cite">
-                            <span className="cite-head">[{c.marker}] {c.source} — p.{c.page}</span>
+                            <span className="cite-head">[{c.marker}] {c.source} - p.{c.page}</span>
                             <div className="muted">{c.snippet}</div>
                           </div>
                         ))}
@@ -427,7 +426,7 @@ export default function Home() {
                               disabled={busy}
                               title={
                                 s.scope === "general"
-                                  ? "Beyond this document — opens Google AI Mode in a new tab"
+                                  ? "Beyond this document - opens Google search in a new tab"
                                   : "Answered from your document"
                               }
                             >
