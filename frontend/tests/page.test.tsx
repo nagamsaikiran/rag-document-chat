@@ -105,7 +105,7 @@ describe("Home", () => {
     const box = screen.getByPlaceholderText(/ask a question/i);
     await userEvent.type(box, "what is the answer?{Enter}");
     expect(await screen.findByText("The answer is 42 [1].")).toBeInTheDocument();
-    expect(await screen.findByText(/doc\.pdf — p\.3/)).toBeInTheDocument();
+    expect(await screen.findByText(/doc\.pdf - p\.3/)).toBeInTheDocument();
     expect(screen.getByText(/the answer is 42/)).toBeInTheDocument();
   });
 
