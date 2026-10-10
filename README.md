@@ -1,4 +1,4 @@
-# DocChat RAG — Grounded Document Q&A with Citations
+# DocChat RAG - Grounded Document Q&A with Citations
 
 [![CI](https://github.com/nagamsaikiran/rag-document-chat/actions/workflows/ci.yml/badge.svg)](https://github.com/nagamsaikiran/rag-document-chat/actions/workflows/ci.yml)
 
