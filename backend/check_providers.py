@@ -7,7 +7,7 @@ Run from the backend directory with your virtualenv active:
 
 It makes ONE tiny call to each provider in your LLM_PROVIDERS chain and prints
 OK / FAIL with the model name, latency, and any error. This is the only way to
-confirm the failover providers (Groq, Cerebras, Mistral) actually work — in
+confirm the failover providers (Groq, Mistral) actually work — in
 normal use you never see them unless the primary runs out.
 
 Reading the results:
@@ -48,7 +48,7 @@ def list_models(settings):
     """`python check_providers.py models` — list the model IDs each key can use.
 
     Free catalogs change often; run this to find a current model name to put in
-    the matching *_CHAT_MODEL in .env. (Groq/Cerebras/Mistral expose /models;
+    the matching *_CHAT_MODEL in .env. (Groq/Mistral expose /models;
     Gemini's list works differently and is skipped here.)"""
     from openai import OpenAI
 

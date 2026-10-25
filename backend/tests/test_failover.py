@@ -91,7 +91,7 @@ def test_factory_skips_provider_without_key(monkeypatch):
 def test_factory_builds_failover_for_multiple(monkeypatch):
     from app.config import Settings
     import app.llm.factory as f
-    s = Settings(llm_providers="groq,cerebras", groq_api_key="x", cerebras_api_key="y")
+    s = Settings(llm_providers="groq,mistral", groq_api_key="x", mistral_api_key="y")
     monkeypatch.setattr(f, "get_settings", lambda: s)
     f.get_llm.cache_clear()
     try:

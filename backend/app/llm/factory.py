@@ -21,7 +21,6 @@ logger = logging.getLogger("docchat.factory")
 # OpenAI-compatible free-tier providers: name -> (base_url, key attr, model attr)
 _OPENAI_COMPAT = {
     "groq":     ("https://api.groq.com/openai/v1", "groq_api_key", "groq_chat_model"),
-    "cerebras": ("https://api.cerebras.ai/v1",     "cerebras_api_key", "cerebras_chat_model"),
     "mistral":  ("https://api.mistral.ai/v1",      "mistral_api_key", "mistral_chat_model"),
 }
 
