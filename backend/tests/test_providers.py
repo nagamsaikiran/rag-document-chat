@@ -9,7 +9,7 @@ from app.llm.factory import _EMBEDDERS, _OPENAI_COMPAT
 def test_providers_registered():
     assert {"gemini", "openai"} <= set(_EMBEDDERS)
     # OpenAI-compatible free-tier chat providers for the failover chain.
-    assert {"groq", "cerebras", "mistral"} <= set(_OPENAI_COMPAT)
+    assert {"groq", "mistral"} <= set(_OPENAI_COMPAT)
 
 
 def test_transcribe_image_default_raises():

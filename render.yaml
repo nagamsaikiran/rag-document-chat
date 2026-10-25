@@ -25,5 +25,9 @@ services:
         sync: false          # set this secret in the Render dashboard
       - key: MULTIMODAL
         value: "false"       # vision is opt-in per upload (saves quota)
+      # Browser origin allowed to call the API (same-origin UI, so this only
+      # blocks other sites from calling it from a browser).
+      - key: CORS_ORIGINS
+        value: https://docchat.saikirannagam.com
       - key: RATE_LIMIT_PER_MIN
         value: "20"

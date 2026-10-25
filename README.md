@@ -1,9 +1,9 @@
-# DocChat RAG — Grounded Document Q&A with Citations
+# DocChat RAG - Grounded Document Q&A with Citations
 
 [![CI](https://github.com/nagamsaikiran/rag-document-chat/actions/workflows/ci.yml/badge.svg)](https://github.com/nagamsaikiran/rag-document-chat/actions/workflows/ci.yml)
 
 A production-shaped Retrieval-Augmented Generation (RAG) application: upload
-documents (PDF, DOCX, TXT, MD, HTML), ask questions — including follow-ups —
+documents (PDF, DOCX, TXT, MD, HTML), ask questions - including follow-ups -
 and get answers that are **grounded in your documents**, **cited back to the
 exact source and page**, and **streamed token-by-token**. Ships with **hybrid
 retrieval (vector + BM25)**, **conversation memory with query rewriting**, a
@@ -54,26 +54,26 @@ flowchart LR
 ```
 
 **Flow:** PDFs are chunked → embedded → stored in Chroma. A question is embedded,
-the nearest chunks are retrieved, and — *only if a chunk clears the relevance
-threshold* — a grounded prompt with numbered context is sent to the LLM, which
+the nearest chunks are retrieved, and - *only if a chunk clears the relevance
+threshold* - a grounded prompt with numbered context is sent to the LLM, which
 answers with inline `[1]`/`[2]` citations streamed back to the UI.
 
 ---
 
 ## Why this isn't a tutorial clone
 
-These are the parts most demos skip — and the parts interviewers probe:
+These are the parts most demos skip - and the parts interviewers probe:
 
 | Decision | What I did | Why |
 |---|---|---|
-| **Provider abstraction** | LLM + embeddings sit behind ABCs (`app/llm/base.py`); **OpenAI and Google Gemini** both implemented, selectable via one env var. | Swap providers by adding one file — no change to RAG, API, or tests. Gemini's free tier means it runs at $0. |
+| **Provider abstraction** | LLM + embeddings sit behind ABCs (`app/llm/base.py`); **OpenAI and Google Gemini** both implemented, selectable via one env var. | Swap providers by adding one file - no change to RAG, API, or tests. Gemini's free tier means it runs at $0. |
 | **Hybrid retrieval** | Dense vector search fused with BM25 keyword scores via Reciprocal Rank Fusion. | Dense-only retrieval misses exact-match queries (IDs, names, part numbers); BM25 catches them. Gemini embeddings also use retrieval task types (`RETRIEVAL_DOCUMENT`/`RETRIEVAL_QUERY`). |
-| **Conversation memory** | Follow-up questions are rewritten into standalone queries (LLM condense step) before retrieval. | "What about section 3?" retrieves nothing on its own — multi-turn is where naive RAG demos fall over. |
+| **Conversation memory** | Follow-up questions are rewritten into standalone queries (LLM condense step) before retrieval. | "What about section 3?" retrieves nothing on its own - multi-turn is where naive RAG demos fall over. |
 | **Honest citations** | After generation, only the `[n]` markers actually used in the answer are returned as citations. | Returning every retrieved chunk as a "citation" overstates evidence. |
-| **Multimodal ingestion** | Pages rendered with PyMuPDF and read by a vision model into Markdown — tables, charts, figures, and scanned text. | Plain text extraction misses everything that isn't a text layer. Vision captures the whole page. |
+| **Multimodal ingestion** | Pages rendered with PyMuPDF and read by a vision model into Markdown - tables, charts, figures, and scanned text. | Plain text extraction misses everything that isn't a text layer. Vision captures the whole page. |
 | **Grounding guardrail** | If the best chunk's distance exceeds a threshold, the system refuses instead of answering. | Stops the classic RAG failure: answering from the model's memory when the docs don't contain the answer. |
-| **Citations** | Numbered context; the model must cite; the API returns source + page + snippet. | Every claim is auditable — the difference between a toy and something trustworthy. |
-| **Evaluation** | Harness scores retrieval hit-rate, answer correctness, and faithfulness (LLM-as-judge), incl. negative tests. | You can't improve what you don't measure — the strongest seniority signal in the repo. |
+| **Citations** | Numbered context; the model must cite; the API returns source + page + snippet. | Every claim is auditable - the difference between a toy and something trustworthy. |
+| **Evaluation** | Harness scores retrieval hit-rate, answer correctness, and faithfulness (LLM-as-judge), incl. negative tests. | You can't improve what you don't measure - the strongest seniority signal in the repo. |
 | **Security** | Streamed uploads with pre-buffer size checks, session validation + TTL expiry, rate limiting, quota caps, prompt-injection hardening, non-root container, generic errors with request ids, `pip-audit` (0 CVEs). | Shows production awareness. See [SECURITY.md](SECURITY.md) and [docs/AUDIT-2026-07-09.md](docs/AUDIT-2026-07-09.md). |
 
 ---
@@ -85,7 +85,7 @@ These are the parts most demos skip — and the parts interviewers probe:
 - **LLM/Embeddings:** OpenAI (`gpt-4o-mini`) or Google Gemini (`gemini-2.5-flash`, free tier) behind a swappable interface; Gemini embeddings use retrieval task types
 - **Multimodal:** vision model reads tables, charts, figures, and scanned pages (PyMuPDF render → vision transcription)
 - **Frontend:** Next.js (App Router), React, TypeScript
-- **Security:** dependency audit (pip-audit, 0 CVEs), streamed uploads + size/page/quota caps, session TTL, rate limiting, hardened prompts, non-root container — see [SECURITY.md](SECURITY.md)
+- **Security:** dependency audit (pip-audit, 0 CVEs), streamed uploads + size/page/quota caps, session TTL, rate limiting, hardened prompts, non-root container - see [SECURITY.md](SECURITY.md)
 
 ---
 
@@ -115,7 +115,7 @@ save, then run scripts 2 and 3 and open **http://localhost:3000**.
 cd backend
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env        # defaults to Gemini (free) — add your GEMINI_API_KEY
+cp .env.example .env        # defaults to Gemini (free) - add your GEMINI_API_KEY
 uvicorn app.main:app --reload --port 8000
 ```
 
@@ -139,14 +139,14 @@ curl -X POST http://localhost:8000/chat -H "Content-Type: application/json" \
 
 ## Try it with a sample document
 
-No PDF handy? Use the classic **"Attention Is All You Need"** paper (the Transformer paper) —
+No PDF handy? Use the classic **"Attention Is All You Need"** paper (the Transformer paper) -
 it's public, text-based, and fact-dense, which makes citations and the guardrail easy to show:
 
 - Download: **https://arxiv.org/pdf/1706.03762**
 
 Upload it, then ask these questions. The first four are answerable from the paper (you'll get
 cited answers); the last one is **not** in the paper, so the app should refuse instead of
-guessing — that's the grounding guardrail in action:
+guessing - that's the grounding guardrail in action:
 
 | Question | Expected |
 |---|---|
@@ -183,7 +183,7 @@ enable it), so retrieval quality regressions show up in the badge, not in prod.
 Every push runs four CI jobs: backend tests, frontend tests, a dependency
 audit, and the live RAG eval.
 
-**Backend — pytest (36 tests, no network needed):**
+**Backend - pytest (36 tests, no network needed):**
 
 ```bash
 cd backend
@@ -198,7 +198,7 @@ filtering, history clipping, query-rewrite fallback, injection hardening), and
 the API security guards (session validation, upload caps, body-size limits,
 security headers) via FastAPI's TestClient.
 
-**Frontend — Vitest + Testing Library (7 tests, mocked network):**
+**Frontend - Vitest + Testing Library (7 tests, mocked network):**
 
 ```bash
 cd frontend
@@ -210,7 +210,7 @@ Covers upload validation, SSE stream parsing (including malformed events),
 citation rendering, per-source delete, the session-id contract with the
 backend, and that conversation history is sent with follow-ups.
 
-**End-to-end quality — the eval harness** (above) exercises the real pipeline
+**End-to-end quality - the eval harness** (above) exercises the real pipeline
 with live LLM calls against a fixture corpus.
 
 ---
@@ -219,12 +219,12 @@ with live LLM calls against a fixture corpus.
 
 Being explicit about tradeoffs is part of the point:
 
-- **No auth** — sessions isolate visitors (validated ids, TTL expiry) but aren't credentials. Prod would add real authentication and per-user namespaces (see [SECURITY.md](SECURITY.md)).
-- **Prompt injection is mitigated, not solved** — context is delimited and declared untrusted, but no prompt-level defense is complete against a crafted document.
-- **LLM-as-judge is approximate** — good for relative comparison, not ground truth; a human-labeled set would be stronger.
-- **BM25 is per-session, in-process** — perfect at visitor scale; a large shared corpus would want a real sparse index (e.g. Elasticsearch) and a cross-encoder reranker after fusion.
-- **Synchronous ingestion** — vision mode on large PDFs can hit host request timeouts; a background job queue with progress events is the production shape.
-- **Agentic upgrade** — let the model decide *when* to retrieve and add a second tool (web search) to make this an agentic RAG system.
+- **No auth** - sessions isolate visitors (validated ids, TTL expiry) but aren't credentials. Prod would add real authentication and per-user namespaces (see [SECURITY.md](SECURITY.md)).
+- **Prompt injection is mitigated, not solved** - context is delimited and declared untrusted, but no prompt-level defense is complete against a crafted document.
+- **LLM-as-judge is approximate** - good for relative comparison, not ground truth; a human-labeled set would be stronger.
+- **BM25 is per-session, in-process** - perfect at visitor scale; a large shared corpus would want a real sparse index (e.g. Elasticsearch) and a cross-encoder reranker after fusion.
+- **Synchronous ingestion** - vision mode on large PDFs can hit host request timeouts; a background job queue with progress events is the production shape.
+- **Agentic upgrade** - let the model decide *when* to retrieve and add a second tool (web search) to make this an agentic RAG system.
 
 ---
 
@@ -259,7 +259,7 @@ render.yaml              # one-click Render Blueprint
 
 ## Deployment
 
-The app ships as a **single container** — the Next.js UI is built to static files
+The app ships as a **single container** - the Next.js UI is built to static files
 and served by FastAPI, so the whole thing runs as one service on one URL (ideal
 for a custom subdomain). Vision is **off by default** in production to protect
 free-tier quota; users opt in per upload via the "Read tables & images" toggle.
@@ -278,13 +278,13 @@ Custom Domains, then add a matching `CNAME` in Cloudflare DNS pointing to the
 Render target. HTTPS is automatic.
 
 > Note: the free tier sleeps when idle and uses an ephemeral disk, so the Chroma
-> index resets on restart — fine for a demo. Add a persistent disk for durability.
+> index resets on restart - fine for a demo. Add a persistent disk for durability.
 
 ## Analytics
 
 Google Analytics 4 is built in. Set **`NEXT_PUBLIC_GA_ID`** (`G-XXXXXXXX`) to
 enable it; it stays off when unset (local dev). Beyond page views, the app emits
-custom events — `pdf_uploaded`, `question_asked`, `pdf_upload_failed` — so you can
+custom events - `pdf_uploaded`, `question_asked`, `pdf_upload_failed` - so you can
 see real product usage.
 
 ---
