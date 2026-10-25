@@ -17,7 +17,7 @@ class Settings(BaseSettings):
 
     # Failover chain for ANSWER GENERATION (comma-separated, first = primary).
     # When >1 provider is listed, one that hits its rate/quota limit falls
-    # through to the next automatically. Example: "gemini,groq,cerebras,mistral".
+    # through to the next automatically. Example: "gemini,groq,mistral".
     # Empty = just use `llm_provider`. Embeddings are NOT affected by this —
     # they always use `embedding_provider` (vectors aren't portable across
     # models, so the embedder must stay fixed).
@@ -40,9 +40,6 @@ class Settings(BaseSettings):
     # check https://console.groq.com/docs/models if one 404s, then override here.
     groq_api_key: str = ""
     groq_chat_model: str = "openai/gpt-oss-20b"
-    # Cerebras (free, fast; https://cloud.cerebras.ai)
-    cerebras_api_key: str = ""
-    cerebras_chat_model: str = "gpt-oss-120b"
     # Mistral La Plateforme (free tier; https://console.mistral.ai)
     mistral_api_key: str = ""
     mistral_chat_model: str = "mistral-small-latest"
